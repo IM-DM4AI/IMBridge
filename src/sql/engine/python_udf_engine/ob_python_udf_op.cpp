@@ -6,6 +6,14 @@
 
 #include <iostream>
 #include <fstream>
+#include <arrow/api.h>
+#include <arrow/table.h>
+#include <arrow/io/api.h>
+#include <arrow/io/memory.h>
+#include <arrow/ipc/api.h>
+#include <arrow/ipc/writer.h>
+#include <arrow/status.h>
+#include <arrow/array/concatenate.h>
 
 namespace oceanbase
 {
@@ -1109,11 +1117,228 @@ int ObPythonUDFCell::do_restore_vector(ObEvalCtx &eval_ctx, int64_t output_idx, 
   return ret;
 }
 
+
+int ObPythonUDFCell::do_restore_arrow_to_batch(ObEvalCtx &eval_ctx, int64_t output_idx, int64_t output_size)
+{
+  int ret = OB_SUCCESS;
+  ObDatum *result_datums = expr_->locate_batch_datums(eval_ctx);
+  std::shared_ptr<arrow::Array> array = arrow::Concatenate(result_arrow_store_->column(0)->chunks()).ValueOrDie();
+  switch(expr_->datum_meta_.type_) {
+    case ObCharType:
+    case ObVarcharType:
+    case ObTinyTextType:
+    case ObTextType:
+    case ObMediumTextType:
+    case ObLongTextType: {
+      auto string_array = std::static_pointer_cast<arrow::StringArray>(array);
+      for (int i = 0; i < output_size; ++i) {
+        expr_->reset_ptr_in_datum(eval_ctx, i);
+        const char* str_data = string_array->GetView(output_idx + i).data();
+        int64_t str_length = string_array->GetView(output_idx + i).size();
+        result_datums[i].set_string(common::ObString(str_length, str_data));
+      }
+      break;
+    }
+    case ObTinyIntType:
+    case ObSmallIntType:
+    case ObMediumIntType:
+    case ObInt32Type:
+    case ObIntType: {
+      auto int_array = std::static_pointer_cast<arrow::Int32Array>(array);
+      for (int i = 0; i < output_size; ++i) {
+        expr_->reset_ptr_in_datum(eval_ctx, i);
+        result_datums[i].set_int(int_array->Value(output_idx + i));
+      }
+      break;
+    }
+    case ObDoubleType: {
+      auto double_array = std::static_pointer_cast<arrow::DoubleArray>(array);
+      for (int i = 0; i < output_size; ++i) {
+        expr_->reset_ptr_in_datum(eval_ctx, i);
+        result_datums[i].set_double(double_array->Value(output_idx + i));
+      }
+      break;
+    }
+    default: {
+      //error
+      ret = OB_NOT_SUPPORTED;
+      LOG_WARN("Unsupported result type.", K(ret));
+    }
+  }
+  result_datums->reset();
+  return ret;
+}
+
+int ObPythonUDFCell::do_restore_arrow_to_vector(ObEvalCtx &eval_ctx, int64_t output_idx, int64_t output_size){
+  int ret = OB_SUCCESS;
+  //if (!expr_->get_eval_info(eval_ctx).evaluated_) {
+  VectorFormat format = VEC_INVALID;
+  const ObPythonUdfInfo *info = static_cast<ObPythonUdfInfo *>(expr_->extra_info_);
+  switch(info->udf_meta_.ret_) {
+    case share::schema::ObPythonUDF::PyUdfRetType::STRING:
+      format = VEC_DISCRETE;
+      //format = VEC_CONTINUOUS;
+    break;
+    case share::schema::ObPythonUDF::PyUdfRetType::INTEGER:
+    case share::schema::ObPythonUDF::PyUdfRetType::REAL:
+      format = VEC_FIXED;
+    break;
+    default:
+      ret = OB_NOT_SUPPORTED;
+      LOG_WARN("Unsupported result type.", K(ret));
+  }
+  expr_->init_vector_for_write(eval_ctx, format, batch_size_);
+  ObIVector *vector = expr_->get_vector(eval_ctx);
+  std::shared_ptr<arrow::Array> array = arrow::Concatenate(result_arrow_store_->column(0)->chunks()).ValueOrDie();
+  // 构造vector并赋回expr_
+  switch(expr_->datum_meta_.type_) {
+    case ObCharType:
+    case ObVarcharType:
+    case ObTinyTextType:
+    case ObTextType:
+    case ObMediumTextType:
+    case ObLongTextType: {
+      auto string_array = std::static_pointer_cast<arrow::StringArray>(array);
+      for (int i = 0; i < output_size; ++i) {
+        const char* str_data = string_array->GetView(output_idx + i).data();
+        int64_t str_length = string_array->GetView(output_idx + i).size();
+        vector->set_string(i, common::ObString(str_length, str_data));
+      }
+      break;
+    }
+    case ObTinyIntType:
+    case ObSmallIntType:
+    case ObMediumIntType:
+    case ObInt32Type:
+    case ObIntType: {
+      auto int_array = std::static_pointer_cast<arrow::Int32Array>(array);
+      for (int i = 0; i < output_size; ++i) {
+        vector->set_int(i, int_array->Value(output_idx + i));
+      }
+      break;
+    }
+    case ObDoubleType: {
+      auto double_array = std::static_pointer_cast<arrow::DoubleArray>(array);
+      for (int i = 0; i < output_size; ++i) {
+        vector->set_double(i, double_array->Value(output_idx + i));
+      }
+      break;
+    }
+    default: {
+      //error
+      ret = OB_NOT_SUPPORTED;
+      LOG_WARN("Unsupported result type.", K(ret));
+    }
+  }
+  return ret;
+}
+
 // warp all saved input
 int ObPythonUDFCell::wrap_input_numpy(PyObject *&pArgs, int64_t &eval_size)
 {
   return wrap_input_numpy(pArgs, 0, input_store_.get_saved_size(), eval_size);
 }
+
+int ObPythonUDFCell::wrap_input_arrow_table(std::shared_ptr<arrow::Table> &arrow_table, int64_t idx, int64_t predict_size, int64_t &eval_size)
+{
+  int ret = OB_SUCCESS;
+  int64_t saved_size = input_store_.get_saved_size();
+  eval_size = (idx + predict_size) < saved_size ? predict_size : saved_size - idx;
+
+  if (expr_ == nullptr)
+  {
+    ret = OB_NOT_INIT;
+    LOG_WARN("Expr in input store is nullptr.", K(ret));
+  }
+  else
+  {
+    std::vector<std::shared_ptr<arrow::Array>> arrays;
+    std::vector<std::shared_ptr<arrow::Field>> fields;
+
+    for (int i = 0; i < expr_->arg_cnt_; ++i)
+    {
+      std::shared_ptr<arrow::Array> array;
+      switch (expr_->args_[i]->datum_meta_.type_)
+      {
+      case ObCharType:
+      case ObVarcharType:
+      case ObTinyTextType:
+      case ObTextType:
+      case ObMediumTextType:
+      case ObLongTextType:
+      {
+        ObDatum *src = reinterpret_cast<ObDatum *>(input_store_.get_data_ptr_at(i)) + idx;
+        arrow::StringBuilder builder;
+        for (int j = 0; j < eval_size; ++j)
+        {
+          arrow::Status status = builder.Append(src[j].ptr_, src[j].len_);
+        }
+        arrow::Status status = builder.Finish(&array);
+        fields.push_back(arrow::field("column_" + std::to_string(i), arrow::utf8()));
+        break;
+      }
+      case ObTinyIntType:
+      case ObSmallIntType:
+      case ObMediumIntType:
+      case ObInt32Type:
+      case ObIntType:
+      {
+        auto buffer = arrow::Buffer::Wrap(
+            reinterpret_cast<const int32_t *>(input_store_.get_data_ptr_at(i)) + idx, eval_size);
+        array = std::make_shared<arrow::Int32Array>(eval_size, buffer);
+        fields.push_back(arrow::field("column_" + std::to_string(i), arrow::int32()));
+        break;
+      }
+      case ObDoubleType:
+      {
+        auto *data_ptr = reinterpret_cast<const double *>(input_store_.get_data_ptr_at(i)) + idx;
+        auto buffer = arrow::Buffer::Wrap(reinterpret_cast<const uint8_t *>(data_ptr), eval_size * sizeof(double));
+        array = std::make_shared<arrow::DoubleArray>(eval_size, buffer);
+        fields.push_back(arrow::field("column_" + std::to_string(i), arrow::float64()));
+        break;
+      }
+      default:
+      {
+        ret = OB_NOT_SUPPORTED;
+        LOG_WARN("Unsupported input type.", K(ret));
+      }
+      }
+      if (OB_SUCCESS == ret)
+      {
+        arrays.push_back(array);
+      }
+      else
+      {
+        break;
+      }
+    }
+
+    if (OB_SUCCESS == ret)
+    {
+      auto schema = std::make_shared<arrow::Schema>(fields);
+      arrow_table = arrow::Table::Make(schema, arrays);
+    }
+    /*
+    // !!check table
+    if (arrow_table)
+    {
+      std::ostringstream oss;
+
+      arrow::PrettyPrintOptions options;
+      options.indent = 2; 
+      options.window = 10; 
+
+      auto status = arrow::PrettyPrint(*arrow_table, options, &oss);
+      std::string arrow_table_str = oss.str(); 
+      LOG_INFO("[arrow table]_____________________________________", KCSTRING(arrow_table_str.c_str()));
+      LOG_INFO("[arrow table]_____________________________________compute finished\n", K(ret));
+    }
+    */
+  }
+
+  return ret;
+}
+
 
 // warp [idx, idx + predict_size_]
 int ObPythonUDFCell::wrap_input_numpy(PyObject *&pArgs, int64_t idx, int64_t predict_size, int64_t &eval_size)
@@ -1200,6 +1425,7 @@ int ObPythonUDFCell::wrap_input_numpy(PyObject *&pArgs, int64_t idx, int64_t pre
       }
     }
   }
+  // wrap_input_arrow_table(result_arrow_store_, idx, predict_size, eval_size);
   return ret;
 }
 
