@@ -1293,9 +1293,7 @@ if (${ARCHITECTURE} STREQUAL "x86_64")
 		-mtune=core-avx2 -mavx2 -mfma -mbmi2 -mavx512vl -mavx512bw
 	)
 endif()
-
-target_link_libraries(ob_sql PUBLIC python_lib)
-
+target_link_libraries(ob_sql PUBLIC python_lib steve)
 target_link_libraries(ob_sql PUBLIC ob_base)
 
 add_library(ob_sql_static
@@ -1303,7 +1301,7 @@ add_library(ob_sql_static
   EXCLUDE_FROM_ALL)
 
 target_link_libraries(ob_sql_static
-  PUBLIC ob_sql ob_sql_server_parser_static)
+  PUBLIC ob_sql ob_sql_server_parser_static steve)
 
 execute_process(
   COMMAND bash gen_parser.sh

@@ -470,7 +470,7 @@ target_link_libraries(observer
   ${link_malloc_hook}
 )
 
-target_link_libraries(ob_server PUBLIC python_lib)
+target_link_libraries(ob_server PUBLIC python_lib steve)
 
 execute_process(
   COMMAND sh -c "cd ${CMAKE_SOURCE_DIR} && git rev-parse HEAD"
