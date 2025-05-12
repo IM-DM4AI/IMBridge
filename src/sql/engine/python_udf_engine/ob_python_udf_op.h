@@ -114,7 +114,6 @@ public:
 
   //计算过程  
   int wrap_input_numpy(PyObject *&pArgs, int64_t &eval_size); // wrap all args
-  int wrap_input_arrow_table(std::shared_ptr<arrow::Table> &arrow_table, int64_t idx, int64_t predict_size, int64_t &eval_size);
   int wrap_input_numpy(PyObject *&pArgs, int64_t idx, int64_t predict_size, int64_t &eval_size); // warp args in [idx, idx + predict_size]
   int eval(PyObject *pArgs, int64_t eval_size); // do python udf evaluation
   int modify_desirable(timeval &start, timeval &end, int64_t eval_size);
