@@ -1,6 +1,8 @@
 #define USING_LOG_PREFIX SQL_ENG
 
 #include "ob_python_udf_op.h"
+#include "ob_udf_scheduler.h"
+#include "ob_shared_memory_manager.h"
 #include "ob_arrow_transform_util.h"
 #include "sql/engine/ob_physical_plan.h"
 #include "sql/engine/ob_exec_context.h"
@@ -11,7 +13,7 @@ using namespace common;
 namespace sql
 {
 
-static bool with_batch_control_ = true; // 是否进行batch size控制
+static bool with_batch_control_ = false; // 是否进行batch size控制
 
 OB_SERIALIZE_MEMBER((ObPythonUDFSpec, ObOpSpec),
                     udf_exprs_,
@@ -914,7 +916,6 @@ int ObPythonUDFCell::do_process_all()
     LOG_WARN("Eval Python UDF failed.", K(ret));
   } else { /* do nothing */ }
   Py_CLEAR(pArgs);
-
   //gettimeofday(&t2, NULL);
   /*double timeuse = (t2.tv_sec - t1.tv_sec) * 1000000 + (double)(t2.tv_usec - t1.tv_usec); // usec
   double tps = eval_size * 1000000 / timeuse; // current tuples per sec
@@ -1000,6 +1001,7 @@ int ObPythonUDFCell::do_restore_batch(ObEvalCtx &eval_ctx, int64_t output_idx, i
 {
   int ret = OB_SUCCESS;
   ObDatum *result_datums = expr_->locate_batch_datums(eval_ctx);
+  /*
   PyArrayObject *result_store = reinterpret_cast<PyArrayObject *>(result_store_);
   switch(expr_->datum_meta_.type_) {
     case ObCharType:
@@ -1041,6 +1043,11 @@ int ObPythonUDFCell::do_restore_batch(ObEvalCtx &eval_ctx, int64_t output_idx, i
       LOG_WARN("Unsupported result type.", K(ret));
     }
   }
+  */
+  if(!convert_arrow_to_ob_data(result_arrow_store_, eval_ctx, result_datums, expr_, output_idx, output_size)){
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("Failed to conver arrow to ob data", K(ret));
+  }
   return ret;
 }
 
@@ -1065,6 +1072,7 @@ int ObPythonUDFCell::do_restore_vector(ObEvalCtx &eval_ctx, int64_t output_idx, 
   }
   expr_->init_vector_for_write(eval_ctx, format, batch_size_);
   ObIVector *vector = expr_->get_vector(eval_ctx);
+  /*
   PyArrayObject *result_store = reinterpret_cast<PyArrayObject *>(result_store_);
   // 构造vector并赋回expr_
   switch(expr_->datum_meta_.type_) {
@@ -1104,6 +1112,20 @@ int ObPythonUDFCell::do_restore_vector(ObEvalCtx &eval_ctx, int64_t output_idx, 
       LOG_WARN("Unsupported result type.", K(ret));
     }
   }
+  */
+  SharedMemoryManager shm(std::to_string(shm_lane_id), ProcessKind::CLIENT);
+  shm.client_wait();
+  if(!read_arrow_from_shared_memory(result_arrow_store_, shm, OUTPUT_TABLE)){
+    ret = OB_ERR_UNEXPECTED_UNIT_STATUS;
+    LOG_WARN("Failed to write arrow table to shared memory", K(ret));
+  }
+  if(!convert_arrow_to_ob_data(result_arrow_store_, eval_ctx, vector, expr_, output_idx, output_size)){
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("Failed to conver arrow to ob data", K(ret));
+  }
+  shm.destroy_shared_memory_object<char>(INPUT_TABLE);
+  shm.destroy_shared_memory_object<char>(OUTPUT_TABLE);
+  shm.server_post();
   return ret;
 }
 
@@ -1174,15 +1196,15 @@ int ObPythonUDFCell::wrap_input_numpy(PyObject *&pArgs, int64_t idx, int64_t pre
         case ObTextType:
         case ObMediumTextType:
         case ObLongTextType: {
-          /*numpyarray = PyArray_New(&PyArray_Type, 
-                                  1, 
-                                  elements, 
-                                  NPY_OBJECT, 
-                                  NULL, 
-                                  reinterpret_cast<PyObject **>(input_store_.get_data_ptr_at(i)), 
-                                  eval_size, 
-                                  0, 
-                                  NULL);*/
+          // numpyarray = PyArray_New(&PyArray_Type, 
+          //                         1, 
+          //                         elements, 
+          //                         NPY_OBJECT, 
+          //                         NULL, 
+          //                         reinterpret_cast<PyObject **>(input_store_.get_data_ptr_at(i)), 
+          //                         eval_size, 
+          //                         0, 
+          //                         NULL);
           numpyarray = PyArray_New(&PyArray_Type, 1, elements, NPY_OBJECT, NULL, NULL, 0, 0, NULL);
           //PyObject **unicode_strs = reinterpret_cast<PyObject **>(input_store_.get_data_ptr_at(i)) + idx;
           // construct unicode str
@@ -1237,8 +1259,8 @@ int ObPythonUDFCell::wrap_input_numpy(PyObject *&pArgs, int64_t idx, int64_t pre
         LOG_WARN("Set numpy array arg failed.", K(ret));
       }
     }
+    convert_ob_data_to_arrow(result_arrow_store_, input_store_, expr_, idx, eval_size);
   }
-  convert_ob_data_to_arrow(result_arrow_store_, input_store_, expr_, idx, eval_size);
   return ret;
 }
 
@@ -1246,7 +1268,7 @@ int ObPythonUDFCell::eval(PyObject *pArgs, int64_t eval_size)
 {
   int ret = OB_SUCCESS;
   // evalatuion in python interpreter
-
+  /*
   // extract pyfun handler
   ObPythonUdfInfo *info = static_cast<ObPythonUdfInfo *>(expr_->extra_info_);
   std::string name(info->udf_meta_.name_.ptr());
@@ -1280,6 +1302,18 @@ int ObPythonUDFCell::eval(PyObject *pArgs, int64_t eval_size)
     }
     result_size_ += eval_size;
   }
+  */
+  
+  auto &scheduler =  IMLaneScheduler::GetOrCreateInstance(true);
+  shm_lane_id = scheduler->get_id_from_avaliable_queue();
+  SharedMemoryManager shm(std::to_string(shm_lane_id), ProcessKind::CLIENT);
+  if(!write_arrow_to_shared_memory(result_arrow_store_, shm, INPUT_TABLE)){
+    ret = OB_ERR_UNEXPECTED_UNIT_STATUS;
+    LOG_WARN("Failed to write arrow table to shared memory", K(ret));
+    return ret;
+  }
+  scheduler->push_cmd_to_task_queue(shm_lane_id, TASK_UDF_INFER);
+  result_size_ += eval_size;
   return ret;
 }
 

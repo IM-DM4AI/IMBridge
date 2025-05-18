@@ -127,7 +127,7 @@ ob_set_subtarget(ob_sql engine
   engine/user_defined_function/ob_user_defined_function.cpp
   engine/window_function/ob_window_function_op.cpp
   engine/python_udf_engine/ob_python_udf_op.cpp   # IMBridge_CMake
-  engine/python_udf_engine/ob_arrow_transform_util.cpp
+  engine/python_udf_engine/ob_arrow_transform_util.cpp # IMLane_file
   engine/opt_statistics/ob_optimizer_stats_gathering_op.cpp
   engine/sort/ob_sort_vec_op.cpp
   engine/sort/ob_sort_vec_op_provider.cpp
@@ -1287,9 +1287,15 @@ ob_set_subtarget(ob_sql_simd common
 )
 
 ob_server_add_target(ob_sql_simd)
+# IMLane lib
+add_library(imlane_lib engine/python_udf_engine/ob_shared_memory_manager.cpp engine/python_udf_engine/ob_udf_scheduler.cpp)
+target_link_libraries(imlane_lib PUBLIC steve)
 
-add_library(imlane_shm engine/python_udf_engine/ob_shared_memory_manager.cpp)
-target_link_libraries(imlane_shm PUBLIC steve)
+
+# IMLane server
+add_executable(udf_server engine/python_udf_engine/ob_udf_server.cpp)
+target_link_directories(udf_server PRIVATE ${PYARROW_LIB_DIR})
+target_link_libraries(udf_server PRIVATE python_lib steve imlane_lib arrow_python)
 
 if (${ARCHITECTURE} STREQUAL "x86_64")
 	target_compile_options(ob_sql_simd
@@ -1297,7 +1303,7 @@ if (${ARCHITECTURE} STREQUAL "x86_64")
 		-mtune=core-avx2 -mavx2 -mfma -mbmi2 -mavx512vl -mavx512bw
 	)
 endif()
-target_link_libraries(ob_sql PUBLIC python_lib steve imlane_shm)
+target_link_libraries(ob_sql PUBLIC python_lib steve imlane_lib)
 target_link_libraries(ob_sql PUBLIC ob_base)
 
 add_library(ob_sql_static

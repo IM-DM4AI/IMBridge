@@ -14,67 +14,6 @@ namespace oceanbase
 {
     namespace sql
     {
-        bool write_arrow_to_shared_memory(std::shared_ptr<arrow::Table> &table, SharedMemoryManager &shm,
-                                          const std::string &shm_id)
-        {
-            std::shared_ptr<arrow::Buffer> buffer;
-            int col = table->num_columns(), row = table->num_rows();
-            auto bit = sizeof(double_t);
-            std::shared_ptr<arrow::io::BufferOutputStream> stream =
-                arrow::io::BufferOutputStream::Create(table->num_columns() * table->num_rows() * sizeof(double_t)).ValueOrDie();
-            std::shared_ptr<arrow::ipc::RecordBatchWriter> writer =
-                arrow::ipc::MakeStreamWriter(stream, table->schema()).ValueOrDie();
-            auto write_status = writer->WriteTable(*table);
-            if(!write_status.ok()){
-                return false;
-            }
-            auto close_status = writer->Close();
-            if(!close_status.ok()){
-                return false;
-            }
-            buffer = stream->Finish().ValueOrDie();
-
-            char *shm_ptr = shm.create_shared_memory_object<char>(shm_id, buffer->size());
-            if (shm_ptr == nullptr)
-            {
-                return false;
-            }
-            std::memcpy(shm_ptr, buffer->data(), buffer->size());
-            return true;
-        }
-
-        bool read_arrow_from_shared_memory(std::shared_ptr<arrow::Table> &table, SharedMemoryManager &shm,
-                                           const std::string &shm_id)
-        {
-            auto shm_table_pair = shm.open_shared_memory_object<char>(shm_id);
-
-            if (shm_table_pair.first == nullptr)
-            {
-                return false;
-            }
-
-            char *shm_table_ptr = shm_table_pair.first;
-            size_t shm_table_size = shm_table_pair.second;
-
-            std::shared_ptr<arrow::Buffer> buffer = arrow::Buffer::Wrap(shm_table_ptr, shm_table_size);
-            std::shared_ptr<arrow::io::InputStream> input = std::make_shared<arrow::io::BufferReader>(buffer);
-            std::shared_ptr<arrow::ipc::RecordBatchReader> reader =
-                arrow::ipc::RecordBatchStreamReader::Open(input).ValueOrDie();
-
-            std::vector<std::shared_ptr<arrow::RecordBatch>> batches;
-            while (true)
-            {
-                std::shared_ptr<arrow::RecordBatch> batch = reader->ReadNext().ValueOrDie().batch;
-                if (batch == nullptr)
-                {
-                    break;
-                }
-                batches.push_back(batch);
-            }
-
-            table = arrow::Table::FromRecordBatches(reader->schema(), batches).ValueOrDie();
-            return true;
-        }
         bool convert_ob_data_to_arrow(std::shared_ptr<arrow::Table> &table, ObPUInputStore &input, ObExpr *expr, int64_t idx, int64_t eval_size)
         {
             std::vector<std::shared_ptr<arrow::Array>> arrays;
@@ -82,6 +21,7 @@ namespace oceanbase
             for (int i = 0; i < expr->arg_cnt_; ++i)
             {
                 std::shared_ptr<arrow::Array> array;
+                std::string col_name = "column_" + std::to_string(i);
                 switch (expr->args_[i]->datum_meta_.type_)
                 {
                 case ObCharType:
@@ -98,7 +38,7 @@ namespace oceanbase
                         arrow::Status status = builder.Append(src[j].ptr_, src[j].len_);
                     }
                     arrow::Status status = builder.Finish(&array);
-                    fields.push_back(arrow::field("column_" + std::to_string(i), arrow::utf8()));
+                    fields.push_back(arrow::field(col_name, arrow::utf8()));
                     break;
                 }
                 case ObTinyIntType:
@@ -110,7 +50,7 @@ namespace oceanbase
                     auto buffer = arrow::Buffer::Wrap(
                         reinterpret_cast<const int32_t *>(input.get_data_ptr_at(i)) + idx, eval_size);
                     array = std::make_shared<arrow::Int32Array>(eval_size, buffer);
-                    fields.push_back(arrow::field("column_" + std::to_string(i), arrow::int32()));
+                    fields.push_back(arrow::field(col_name, arrow::int32()));
                     break;
                 }
                 case ObDoubleType:
@@ -118,7 +58,7 @@ namespace oceanbase
                     auto *data_ptr = reinterpret_cast<const double *>(input.get_data_ptr_at(i)) + idx;
                     auto buffer = arrow::Buffer::Wrap(reinterpret_cast<const uint8_t *>(data_ptr), eval_size * sizeof(double));
                     array = std::make_shared<arrow::DoubleArray>(eval_size, buffer);
-                    fields.push_back(arrow::field("column_" + std::to_string(i), arrow::float64()));
+                    fields.push_back(arrow::field(col_name, arrow::float64()));
                     break;
                 }
                 default:
@@ -150,7 +90,9 @@ namespace oceanbase
 
         bool convert_arrow_to_ob_data(std::shared_ptr<arrow::Table> &table, ObEvalCtx &eval_ctx, ObIVector *res, ObExpr *expr, int64_t idx, int64_t res_size)
         {
-            std::shared_ptr<arrow::Array> array = arrow::Concatenate(table->column(0)->chunks()).ValueOrDie();
+            std::shared_ptr<arrow::ChunkedArray> column = table->column(0);
+            std::vector<std::shared_ptr<arrow::Array>> chunks = column->chunks();
+            std::shared_ptr<arrow::Array> array = arrow::Concatenate(chunks).ValueOrDie();
             // 构造vector并赋回expr_
             switch (expr->datum_meta_.type_)
             {

@@ -2,7 +2,7 @@
 enable_language(C CXX)
 find_package(Arrow REQUIRED)
 find_package(Boost REQUIRED)
-set(CONCURRENTQUEUE_INCLUDE_DIR "/root/workspace/deploy/duckdb/third_party/concurrentqueue")
+set(CONCURRENTQUEUE_INCLUDE_DIR "/workspace/deploy/duckdb/third_party/concurrentqueue")
 
 
 execute_process(
@@ -17,11 +17,11 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 
 message(STATUS "Boost_INCLUDE_DIRS: ${Boost_INCLUDE_DIRS}")
-message(STATUS "PYARROW_INCLUDE_DIR: ${PYARROW_INCLUDE_DIR}")
 message(STATUS "CONCURRENTQUEUE_INCLUDE_DIR: ${CONCURRENTQUEUE_INCLUDE_DIR}")
+message(STATUS "PYARROW_INCLUDE_DIR: ${PYARROW_INCLUDE_DIR}")
 message(STATUS "PYARROW_LIB_DIR: ${PYARROW_LIB_DIR}")
 
 

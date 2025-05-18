@@ -3,6 +3,14 @@
 
 #include <string>
 #include <utility>
+#include <arrow/api.h>
+#include <arrow/table.h>
+#include <arrow/io/api.h>
+#include <arrow/io/memory.h>
+#include <arrow/ipc/api.h>
+#include <arrow/ipc/writer.h>
+#include <arrow/status.h>
+#include <arrow/array/concatenate.h>
 
 namespace oceanbase
 {
@@ -14,6 +22,8 @@ namespace oceanbase
             SERVER = 1,
             MANAGER = 2
         };
+        const std::string INPUT_TABLE = "INPUT_TABLE";
+        const std::string OUTPUT_TABLE = "OUTPUT_TABLE";
 
         class SharedMemoryManager
         {
@@ -30,19 +40,32 @@ namespace oceanbase
             template <typename T>
             void destroy_shared_memory_object(const std::string &name);
 
+            void client_wait();
+
+            void server_wait();
+
+            void client_post();
+
+            void server_post();
+
             std::string get_channel_name()
             {
                 return channel_name;
             }
-
-        private:
             class Impl;
             Impl *impl;
+
+        private:
             std::string channel_name;
             ProcessKind kind;
             size_t size;
         };
 
+        bool write_arrow_to_shared_memory(std::shared_ptr<arrow::Table> &table, SharedMemoryManager &shm,
+                                          const std::string &shm_id = INPUT_TABLE);
+
+        bool read_arrow_from_shared_memory(std::shared_ptr<arrow::Table> &table, SharedMemoryManager &shm,
+                                           const std::string &shm_id = OUTPUT_TABLE);
     } // end namespace sql
 } // end namespace oceanbase
 

@@ -139,6 +139,7 @@ private:
   int result_size_;
   void *result_store_;
   std::shared_ptr<arrow::Table> result_arrow_store_;
+  int shm_lane_id;
 };
 typedef common::ObDList<ObPythonUDFCell> PythonUDFCellList;
 
