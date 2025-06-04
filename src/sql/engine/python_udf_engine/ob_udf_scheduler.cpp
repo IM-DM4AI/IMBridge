@@ -236,7 +236,7 @@ namespace oceanbase
                     }
                     sys_core = std::max(sys_core, 1);
                 }
-                sys_core = 1;
+                // sys_core = 16;
                 IMLaneScheduler::scheduler_instance = std::make_unique<IMLaneScheduler>(is_manager, sys_core, lane_id, size);
                 IMLaneScheduler::scheduler_instance->launch();
             }

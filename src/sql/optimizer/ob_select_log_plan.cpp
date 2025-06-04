@@ -8163,19 +8163,21 @@ int ObSelectLogPlan::generate_python_udf_plans(PythonUDFOpHelper &python_udf_hel
   } else if (!top->is_distributed()) {
     exch_info.dist_method_ = ObPQDistributeMethod::NONE;
   } else {}
-  
-  if (OB_FAIL(allocate_sort_and_exchange_as_top(top, exch_info, tmp_sort_keys, false,
-                                                  0, top->get_is_local_order()))) {
-    LOG_WARN("failed to allocate sort and exchange as top", K(ret));
-  //} else if (OB_FAIL(allocate_exchange_as_top(top, exch_info))) {
-  //  LOG_WARN("failed to allocate exchange as top", K(ret));
-  } else if (OB_FAIL(allocate_python_udf_op_as_top(top, python_udf_exprs, python_udf_projection_exprs, python_udf_filter_exprs))) {
+  // IMLane TODO:  chage the order first udf second exchange
+  if (OB_FAIL(allocate_python_udf_op_as_top(top, python_udf_exprs, python_udf_projection_exprs, python_udf_filter_exprs))){
     LOG_WARN("failed to allocate python udf operator as top", K(ret));
-  } else if (OB_FAIL(total_plans.push_back(CandidatePlan(top)))) {
+    //} else if (OB_FAIL(allocate_exchange_as_top(top, exch_info))) {
+    //  LOG_WARN("failed to allocate exchange as top", K(ret));
+  }else if (OB_FAIL(allocate_sort_and_exchange_as_top(top, exch_info, tmp_sort_keys, false,
+                                                     0, top->get_is_local_order()))){
+    LOG_WARN("failed to allocate sort and exchange as top", K(ret));
+  }else if (OB_FAIL(total_plans.push_back(CandidatePlan(top)))){
     LOG_WARN("failed to push back", K(ret));
   }
   return ret;
 }
+
+
 
 int ObSelectLogPlan::allocate_python_udf_op_as_top(ObLogicalOperator *&top,
                                                    const ObIArray<ObPythonUdfRawExpr*> &python_udf_exprs,

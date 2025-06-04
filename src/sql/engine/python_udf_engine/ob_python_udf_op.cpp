@@ -154,7 +154,7 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
 {
   int ret = OB_SUCCESS;
   // get data from buffer
-
+  /*
   // Ensure GIL
   bool nStatus = PyGILState_Check();
   PyGILState_STATE gstate;
@@ -162,6 +162,7 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
     gstate = PyGILState_Ensure();
     nStatus = true;
   }
+  */
   //struct timeval t1, t2;
   //gettimeofday(&t1, NULL);
   
@@ -190,8 +191,13 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
   } else { // 无batch size控制
     if (OB_SUCC(ret)) { 
       clear_evaluated_flag();
-      controller_.resize(controller_.get_desirable() * BUFFER_MAG);
       const ObBatchRows *child_brs = nullptr;
+      /*
+      if(OB_FAIL(controller_.resize(controller_.get_desirable() * BUFFER_MAG))){
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("Do Python UDF Cell resize failed.", K(ret));
+      }
+      else */
       if (OB_FAIL(child_->get_next_batch(max_row_cnt, child_brs))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("Get child next batch failed.", K(ret));
@@ -230,9 +236,9 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
   //PyGC_Enable();
   //PyGC_Collect();
   // Release GIL
-  if(nStatus) {
-    PyGILState_Release(gstate);
-  }
+  // if(nStatus) {
+  //   PyGILState_Release(gstate);
+  // }
 
   /*std::ofstream outputFile("/home/test/experiments/oceanbase/px/log/batch_size.txt", std::ios::app);
   if (outputFile) {
@@ -276,12 +282,12 @@ int ObPythonUDFOp::init_udfs(const common::ObIArray<ObExpr *> &udf_exprs)
 {
   int ret = OB_SUCCESS;
   //Acquire GIL
-  bool nStatus = PyGILState_Check();
-  PyGILState_STATE gstate;
-  if(!nStatus) {
-    gstate = PyGILState_Ensure();
-    nStatus = true;
-  }
+  // bool nStatus = PyGILState_Check();
+  // PyGILState_STATE gstate;
+  // if(!nStatus) {
+  //   gstate = PyGILState_Ensure();
+  //   nStatus = true;
+  // }
   // init all python udfs
   for (int i = 0; OB_SUCC(ret) && i < udf_exprs.count(); ++i) {
     ObExpr *udf_expr = udf_exprs.at(i);
@@ -351,8 +357,8 @@ int ObPythonUDFOp::init_udfs(const common::ObIArray<ObExpr *> &udf_exprs)
     }
   }
   //release GIL
-  if(nStatus)
-    PyGILState_Release(gstate);
+  // if(nStatus)
+  //   PyGILState_Release(gstate);
   return ret;
 }
 
@@ -906,9 +912,9 @@ int ObPythonUDFCell::do_process_all()
   int64_t eval_size;
   struct timeval t1, t2;
   //load numpy api
-  _import_array();
+  // _import_array();
   //gettimeofday(&t1, NULL);
-  if (OB_FAIL(wrap_input_numpy(pArgs, eval_size)) || pArgs == nullptr) { // wrap all input
+  if (OB_FAIL(wrap_input_numpy(pArgs, eval_size))) { // wrap all input
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("Wrap Cell Input Store as Python UDF input args failed.", K(ret));
   } else if (OB_FAIL(eval(pArgs, eval_size))) { // evaluation and keep the result
@@ -1044,10 +1050,19 @@ int ObPythonUDFCell::do_restore_batch(ObEvalCtx &eval_ctx, int64_t output_idx, i
     }
   }
   */
+  SharedMemoryManager shm(std::to_string(shm_lane_id), ProcessKind::CLIENT);
+  shm.client_wait();
+  if(!read_arrow_from_shared_memory(result_arrow_store_, shm, OUTPUT_TABLE)){
+    ret = OB_ERR_UNEXPECTED_UNIT_STATUS;
+    LOG_WARN("Failed to write arrow table to shared memory", K(ret));
+  }
   if(!convert_arrow_to_ob_data(result_arrow_store_, eval_ctx, result_datums, expr_, output_idx, output_size)){
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("Failed to conver arrow to ob data", K(ret));
   }
+  shm.destroy_shared_memory_object<char>(INPUT_TABLE);
+  shm.destroy_shared_memory_object<char>(OUTPUT_TABLE);
+  shm.server_post();
   return ret;
 }
 
@@ -1179,14 +1194,15 @@ int ObPythonUDFCell::wrap_input_numpy(PyObject *&pArgs, int64_t &eval_size)
 int ObPythonUDFCell::wrap_input_numpy(PyObject *&pArgs, int64_t idx, int64_t predict_size, int64_t &eval_size)
 {
   int ret = OB_SUCCESS;
-  pArgs = PyTuple_New(expr_->arg_cnt_); // malloc hook
+  // pArgs = PyTuple_New(expr_->arg_cnt_); // malloc hook
   int64_t saved_size = input_store_.get_saved_size();
   eval_size = (idx + predict_size) < saved_size ? predict_size : saved_size - idx;
-  npy_intp elements[1] = {eval_size};
+  // npy_intp elements[1] = {eval_size};
   if (expr_ == nullptr) {
     ret = OB_NOT_INIT;
     LOG_WARN("Expr in input store is nullptr.", K(ret));
   } else {
+    /*
     for (int i = 0; i < expr_->arg_cnt_; ++i) {
       PyObject *numpyarray = nullptr;
       switch (expr_->args_[i]->datum_meta_.type_) {
@@ -1259,6 +1275,7 @@ int ObPythonUDFCell::wrap_input_numpy(PyObject *&pArgs, int64_t idx, int64_t pre
         LOG_WARN("Set numpy array arg failed.", K(ret));
       }
     }
+    */
     convert_ob_data_to_arrow(result_arrow_store_, input_store_, expr_, idx, eval_size);
   }
   return ret;

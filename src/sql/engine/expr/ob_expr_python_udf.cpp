@@ -202,7 +202,7 @@ int ObExprPythonUdf::import_udf(const share::schema::ObPythonUDFMeta &udf_meta)
   pycall.replace(pycall.find("pyinitial"), 9, pyinitial_handler);
   pycall.replace(pycall.find("pyfun"), 5, pyfun_handler);
   const char* pycall_c = pycall.c_str();
-  
+  /*
   //Acquire GIL
   bool nStatus = PyGILState_Check();
   PyGILState_STATE gstate;
@@ -250,7 +250,7 @@ int ObExprPythonUdf::import_udf(const share::schema::ObPythonUDFMeta &udf_meta)
   //release GIL
   if(nStatus)
     PyGILState_Release(gstate);
-
+  */
   return ret;
 }
 
@@ -264,7 +264,7 @@ int ObExprPythonUdf::eval_python_udf(EVAL_FUNC_ARG_DECL) {
   std::string name(info->udf_meta_.name_.ptr());
   name = name.substr(0, info->udf_meta_.name_.length());
   std::string pyfun_handler = name.append("_pyfun");
-
+  /*
   //Ensure GIL
   bool nStatus = PyGILState_Check();
   PyGILState_STATE gstate;
@@ -437,7 +437,7 @@ int ObExprPythonUdf::eval_python_udf(EVAL_FUNC_ARG_DECL) {
   //release GIL
   if(nStatus)
     PyGILState_Release(gstate);
-
+  */
   return ret;
 }
 
@@ -490,7 +490,7 @@ int ObExprPythonUdf::eval_python_udf_batch(BATCH_EVAL_FUNC_ARG_DECL) {
     else
       ++real_param;
   }
-
+/*
   //Ensure GIL
   bool nStatus = PyGILState_Check();
   PyGILState_STATE gstate;
@@ -526,7 +526,7 @@ int ObExprPythonUdf::eval_python_udf_batch(BATCH_EVAL_FUNC_ARG_DECL) {
   PyObject *numpyarray = NULL;
   npy_intp elements[1] = {real_param}; // row size
   ObDatum *argDatum = NULL;
-  
+  */
   /*if(info->udf_meta_.init_) {
   } else if (OB_FAIL(import_udf(info->udf_meta_))) {
     ret = OB_ERR_UNEXPECTED;
@@ -535,7 +535,7 @@ int ObExprPythonUdf::eval_python_udf_batch(BATCH_EVAL_FUNC_ARG_DECL) {
   } else {
     info->udf_meta_.init_ = true;
   }*/
-
+  /*
   //获取udf实例并核验
   pModule = PyImport_AddModule("__main__");
   if (OB_ISNULL(pModule)) {
@@ -710,80 +710,80 @@ int ObExprPythonUdf::eval_python_udf_batch(BATCH_EVAL_FUNC_ARG_DECL) {
     }
   }
   gettimeofday(&t5, NULL);
-
+*/
   //释放资源
-  destruction:
+  // destruction:
   //释放运行时变量
-  Py_XDECREF(pKwargs);
-  //释放函数参数
-  for (int i = 0; i < expr.arg_cnt_; i++) {
-    if(arrays[i] == NULL)
-      continue;
-    else {
-      PyArray_XDECREF((PyArrayObject *)arrays[i]);
-      //arrays[i] = NULL;
-    }
-  }
-  //arrays = NULL;
-  //delete[] arrays;
-  Py_XDECREF(pArgs);
-  //释放计算结果
-  if(pResult != NULL) {
-    PyArray_XDECREF((PyArrayObject *)pResult);
-    Py_XDECREF(pResult);
-  }
+  // Py_XDECREF(pKwargs);
+  // //释放函数参数
+  // for (int i = 0; i < expr.arg_cnt_; i++) {
+  //   if(arrays[i] == NULL)
+  //     continue;
+  //   else {
+  //     PyArray_XDECREF((PyArrayObject *)arrays[i]);
+  //     //arrays[i] = NULL;
+  //   }
+  // }
+  // //arrays = NULL;
+  // //delete[] arrays;
+  // Py_XDECREF(pArgs);
+  // //释放计算结果
+  // if(pResult != NULL) {
+  //   PyArray_XDECREF((PyArrayObject *)pResult);
+  //   Py_XDECREF(pResult);
+  // }
 
-  //PyGC_Enable();
-  //PyGC_Collect();
+  // //PyGC_Enable();
+  // //PyGC_Collect();
 
-  //release GIL
-  if(nStatus)
-    PyGILState_Release(gstate);
-  gettimeofday(&t6, NULL);
+  // //release GIL
+  // if(nStatus)
+  //   PyGILState_Release(gstate);
+  // gettimeofday(&t6, NULL);
   
-  // 计算运行时间，调整predict size | pjx
-  /*gettimeofday(&t6, NULL);
-  timeuse = (t6.tv_sec - t1.tv_sec) * 1000000 + (double)(t6.tv_usec - t1.tv_usec); // usec
-  double tps = real_param * 1000000 / timeuse; // current tuples per sec
-  if (info->tps_s == 0) { // 初始化
-    info->tps_s = tps;
-    info->predict_size += info->delta; // 尝试调整
-  } else if (info->round > info->round_limit || real_param != info->predict_size) { //超过轮次，停止调整batch size
-    // do nothing
-  } else if (tps > (1 + info->lambda) * info->tps_s) { 
-    // 提升阈值λ为10% 且 目前计算数量与给定batch size相符，重置轮次
-    info->tps_s = tps;
-    info->predict_size += info->delta;
-    info->round = 0;
-  } else if (tps < info->tps_s * (1 - 0.0)) { // 未达到阈值， 且差距较大 ，减小到达阈值的难度，提升轮次
-    // 降低阈值σ
-    info->tps_s = (1 - info->alpha) * info->tps_s + info->alpha * tps; // 平滑系数α
-    info->round++;
-  }*/
+  // // 计算运行时间，调整predict size | pjx
+  // /*gettimeofday(&t6, NULL);
+  // timeuse = (t6.tv_sec - t1.tv_sec) * 1000000 + (double)(t6.tv_usec - t1.tv_usec); // usec
+  // double tps = real_param * 1000000 / timeuse; // current tuples per sec
+  // if (info->tps_s == 0) { // 初始化
+  //   info->tps_s = tps;
+  //   info->predict_size += info->delta; // 尝试调整
+  // } else if (info->round > info->round_limit || real_param != info->predict_size) { //超过轮次，停止调整batch size
+  //   // do nothing
+  // } else if (tps > (1 + info->lambda) * info->tps_s) { 
+  //   // 提升阈值λ为10% 且 目前计算数量与给定batch size相符，重置轮次
+  //   info->tps_s = tps;
+  //   info->predict_size += info->delta;
+  //   info->round = 0;
+  // } else if (tps < info->tps_s * (1 - 0.0)) { // 未达到阈值， 且差距较大 ，减小到达阈值的难度，提升轮次
+  //   // 降低阈值σ
+  //   info->tps_s = (1 - info->alpha) * info->tps_s + info->alpha * tps; // 平滑系数α
+  //   info->round++;
+  // }*/
   
-  // 计算运行时间，调整predict size | zcy
-  bool start_query = false;
-  gettimeofday(&t6, NULL);
-  timeuse = (t6.tv_sec - t1.tv_sec) * 1000000 + (double)(t6.tv_usec - t1.tv_usec); // usec
-  double tps = real_param * 1000000 / timeuse; // current tuples per sec
-  if (info->tps_s == 0) { // 初始化
-    info->tps_s = tps;
-    info->predict_size += info->delta; // 尝试调整
-    start_query = true;
-  } else if (info->round > info->round_limit || real_param != info->predict_size) { //超过轮次，停止调整batch size 或 不符合predict size
-    // do nothing
-  } else if (tps > info->tps_s) { 
-    // 提升阈值λ为10% 且 目前计算数量与给定batch size相符，进行调整
-    if (tps < (1 + info->lambda) * info->tps_s)
-      info->round++;
-    info->tps_s = tps;
-    info->predict_size += info->delta;
-  } else { //tps <= info->tps_s
-    // 未达到阈值
-    info->tps_s = (1 - info->alpha) * info->tps_s + info->alpha * tps; // 平滑系数α
-    if (tps > (1 - info->lambda) * info->tps_s)
-      info->round++;
-  }
+  // // 计算运行时间，调整predict size | zcy
+  // bool start_query = false;
+  // gettimeofday(&t6, NULL);
+  // timeuse = (t6.tv_sec - t1.tv_sec) * 1000000 + (double)(t6.tv_usec - t1.tv_usec); // usec
+  // double tps = real_param * 1000000 / timeuse; // current tuples per sec
+  // if (info->tps_s == 0) { // 初始化
+  //   info->tps_s = tps;
+  //   info->predict_size += info->delta; // 尝试调整
+  //   start_query = true;
+  // } else if (info->round > info->round_limit || real_param != info->predict_size) { //超过轮次，停止调整batch size 或 不符合predict size
+  //   // do nothing
+  // } else if (tps > info->tps_s) { 
+  //   // 提升阈值λ为10% 且 目前计算数量与给定batch size相符，进行调整
+  //   if (tps < (1 + info->lambda) * info->tps_s)
+  //     info->round++;
+  //   info->tps_s = tps;
+  //   info->predict_size += info->delta;
+  // } else { //tps <= info->tps_s
+  //   // 未达到阈值
+  //   info->tps_s = (1 - info->alpha) * info->tps_s + info->alpha * tps; // 平滑系数α
+  //   if (tps > (1 - info->lambda) * info->tps_s)
+  //     info->round++;
+  // }
   
   // 插桩 记录运行时间
   /*double inference_time = (t4.tv_sec - t3.tv_sec) * 1000 + (double)(t4.tv_usec - t3.tv_usec) / 1000;
@@ -806,7 +806,7 @@ int ObExprPythonUdf::eval_python_udf_batch(BATCH_EVAL_FUNC_ARG_DECL) {
   f << std::endl;
   f.close();*/
   
-  tmp_alloc.reset();
+  // tmp_alloc.reset();
   return ret;
 }
 

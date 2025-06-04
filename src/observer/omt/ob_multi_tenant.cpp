@@ -158,6 +158,7 @@
 #include "storage/tenant_snapshot/ob_tenant_snapshot_service.h"
 #include "share/index_usage/ob_index_usage_info_mgr.h"
 #include "rootserver/mview/ob_mview_maintenance_service.h"
+#include "sql/engine/python_udf_engine/ob_udf_scheduler.h"
 
 #include <Python.h>
 
@@ -580,9 +581,10 @@ int ObMultiTenant::init(ObAddr myaddr,
     SpinWLockGuard guard(lock_);
     if (!Py_IsInitialized()) {
       Py_InitializeEx(0);
-      PyImport_ImportModule("dycacher");
-      PyImport_ImportModule("numpy");
-      PyImport_ImportModule("torch");
+      IMLaneScheduler::GetOrCreateInstance(true);
+      // PyImport_ImportModule("dycacher");
+      // PyImport_ImportModule("numpy");
+      // PyImport_ImportModule("torch");
       //PyImport_ImportModule("tensorflow");
       _save = PyEval_SaveThread();
     }
