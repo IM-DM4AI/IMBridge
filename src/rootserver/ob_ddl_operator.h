@@ -852,6 +852,12 @@ public:
                       const common::ObString *ddl_stmt_str/*=NULL*/);
   //----End of functions for managing model----
 
+  int imlane_launch(const int arg_1,
+                    const float arg_2,
+                    common::ObMySQLTransaction &trans);
+
+  int imlane_destroy(common::ObMySQLTransaction &trans);
+
   //----Functions for label security----
   int handle_label_se_policy_function(share::schema::ObSchemaOperationType ddl_type,
                                       const common::ObString &ddl_stmt_str,

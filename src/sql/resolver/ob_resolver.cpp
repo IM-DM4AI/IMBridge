@@ -149,7 +149,7 @@
 #endif
 #include "sql/resolver/ddl/ob_create_python_udf_resolver.h"
 #include "sql/resolver/ddl/ob_drop_python_udf_resolver.h"
-
+#include "sql/resolver/ddl/ob_imlane_control_resolver.h"
 namespace oceanbase
 {
 using namespace common;
@@ -1194,6 +1194,10 @@ int ObResolver::resolve(IsPrepared if_prepared, const ParseNode &parse_tree, ObS
       }
       case T_DROP_PYTHON_UDF: {
         REGISTER_STMT_RESOLVER(DropPythonUdf);
+        break;
+      }
+      case T_IMLANE_CONTROL: {
+        REGISTER_STMT_RESOLVER(ImlaneControl);
         break;
       }
       default: {

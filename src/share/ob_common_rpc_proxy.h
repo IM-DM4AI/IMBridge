@@ -154,6 +154,8 @@ public:
   RPC_S(PRD create_python_udf, obrpc::OB_CREATE_PYTHON_UDF, (ObCreatePythonUdfArg));
   RPC_S(PRD drop_python_udf, obrpc::OB_DROP_PYTHON_UDF, (ObDropPythonUdfArg));
   //----End of definitions for managing python udf----
+  
+  RPC_S(PRD imlane_control, obrpc::OB_IMLANE_CONTROL, (ObImlaneControlArg));
 
   //----Definitions for managing sequence----
   RPC_S(PRD do_sequence_ddl, obrpc::OB_DO_SEQUENCE_DDL, (ObSequenceDDLArg));

@@ -574,6 +574,10 @@ public:
   int drop_python_udf(const obrpc::ObDropPythonUdfArg &arg);
   //----End of functions for managing Python UDF----
 
+  //----Functions for managing IMLane---- an unknown optimization for IMBridge?
+  int imlane_control(const obrpc::ObImlaneControlArg &arg);
+  //----End of functions for managing IMLane
+
   //----Functions for managing routines----
   int create_routine(const obrpc::ObCreateRoutineArg &arg);
   int drop_routine(const obrpc::ObDropRoutineArg &arg);

@@ -927,6 +927,11 @@ int check_table_udt_id_is_exist(share::schema::ObSchemaGetterGuard &schema_guard
   virtual int check_python_udf_exist(uint64 tenant_id, const common::ObString &name, bool &is_exsit, uint64_t &udf_id);
   //----End of Functions for managing udf----    
 
+  //----Functions for managing IMLane---- 
+  virtual int imlane_launch(const obrpc::ObImlaneControlArg &imlane_control_arg);
+  virtual int imlane_destroy(const obrpc::ObImlaneControlArg &imlane_control_arg);
+  //----End of Functions for managing IMLane----    
+
   //----Functions for managing routine----
   virtual int create_routine(share::schema::ObRoutineInfo &routine_info,
                              const share::schema::ObRoutineInfo *old_routine_info,

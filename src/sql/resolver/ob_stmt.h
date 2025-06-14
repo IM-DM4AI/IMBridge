@@ -389,6 +389,8 @@ public:
             // python udf
             || stmt_type == stmt::T_CREATE_PYTHON_UDF
             || stmt_type == stmt::T_DROP_PYTHON_UDF
+            //imlane
+            || stmt_type == stmt::T_IMLANE_CONTROL
             );
   }
 

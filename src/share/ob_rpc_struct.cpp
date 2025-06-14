@@ -10693,6 +10693,11 @@ OB_SERIALIZE_MEMBER((ObDropPythonUdfArg, ObDDLArg),
                      tenant_id_,
                      name_,
                      if_exist_);
+OB_SERIALIZE_MEMBER((ObImlaneControlArg, ObDDLArg),
+                     tenant_id_,
+                    is_launch_,
+                    launch_arg_1_,
+                    launch_arg_2_);
 
 int ObCloneResourcePoolArg::init(
     const ObString &pool_name,
