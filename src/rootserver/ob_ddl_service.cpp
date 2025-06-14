@@ -34998,6 +34998,86 @@ int ObDDLService::check_python_udf_exist(uint64 tenant_id, const common::ObStrin
   return ret;
 }
 
+int ObDDLService::imlane_launch(const obrpc::ObImlaneControlArg &imlane_control_arg){
+  int ret = OB_SUCCESS;
+  const uint64_t tenant_id = imlane_control_arg.tenant_id_;
+  ObSchemaGetterGuard schema_guard;
+  if (OB_FAIL(check_inner_stat())) {
+    LOG_WARN("variable is not init", K(ret));
+  } 
+  else if (OB_FAIL(get_tenant_schema_guard_with_version_in_inner_table(tenant_id, schema_guard))) {
+    LOG_WARN("fail to get schema guard with version in inner table", K(ret), K(tenant_id));
+  } 
+  else {
+    ObDDLSQLTransaction trans(schema_service_);
+    ObDDLOperator ddl_operator(*schema_service_, *sql_proxy_);
+    int64_t refreshed_schema_version = 0;
+    if (OB_FAIL(schema_guard.get_schema_version(tenant_id, refreshed_schema_version))) {
+      LOG_WARN("failed to get tenant schema version", KR(ret), K(tenant_id));
+    } else if (OB_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
+      LOG_WARN("start transaction failed", KR(ret), K(tenant_id), K(refreshed_schema_version));
+    } else {
+      ret = ddl_operator.imlane_launch(imlane_control_arg.launch_arg_1_, imlane_control_arg.launch_arg_2_,trans);
+      if (OB_FAIL(ret)) {
+        LOG_WARN("failed to launch imlane:", K(imlane_control_arg.launch_arg_1_), K(imlane_control_arg.launch_arg_2_), K(ret));
+      }
+    }
+    if (trans.is_started()) {
+      int temp_ret = OB_SUCCESS;
+      if (OB_SUCCESS != (temp_ret = trans.end(OB_SUCC(ret)))) {
+        LOG_WARN("trans end failed", "is_commit", OB_SUCCESS == ret, K(temp_ret));
+        ret = (OB_SUCC(ret)) ? temp_ret : ret;
+      }
+    }
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(publish_schema(tenant_id))) {
+        LOG_WARN("publish schema failed", K(ret));
+      }
+    }
+  }
+  return ret;
+}
+
+int ObDDLService::imlane_destroy(const obrpc::ObImlaneControlArg &imlane_control_arg){
+  int ret = OB_SUCCESS;
+  const uint64_t tenant_id = imlane_control_arg.tenant_id_;
+  ObSchemaGetterGuard schema_guard;
+  if (OB_FAIL(check_inner_stat())) {
+    LOG_WARN("variable is not init", K(ret));
+  } 
+  else if (OB_FAIL(get_tenant_schema_guard_with_version_in_inner_table(tenant_id, schema_guard))) {
+    LOG_WARN("fail to get schema guard with version in inner table", K(ret), K(tenant_id));
+  } 
+  else {
+    ObDDLSQLTransaction trans(schema_service_);
+    ObDDLOperator ddl_operator(*schema_service_, *sql_proxy_);
+    int64_t refreshed_schema_version = 0;
+    if (OB_FAIL(schema_guard.get_schema_version(tenant_id, refreshed_schema_version))) {
+      LOG_WARN("failed to get tenant schema version", KR(ret), K(tenant_id));
+    } else if (OB_FAIL(trans.start(sql_proxy_, tenant_id, refreshed_schema_version))) {
+      LOG_WARN("start transaction failed", KR(ret), K(tenant_id), K(refreshed_schema_version));
+    } else {
+      ret = ddl_operator.imlane_destroy(trans);
+      if (OB_FAIL(ret)) {
+        LOG_WARN("failed to destroy imlane:", K(ret));
+      }
+    }
+    if (trans.is_started()) {
+      int temp_ret = OB_SUCCESS;
+      if (OB_SUCCESS != (temp_ret = trans.end(OB_SUCC(ret)))) {
+        LOG_WARN("trans end failed", "is_commit", OB_SUCCESS == ret, K(temp_ret));
+        ret = (OB_SUCC(ret)) ? temp_ret : ret;
+      }
+    }
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(publish_schema(tenant_id))) {
+        LOG_WARN("publish schema failed", K(ret));
+      }
+    }
+  }
+  return ret;
+}
+
 int ObDDLService::reconstruct_table_schema_from_recyclebin(ObTableSchema &index_table_schema,
                                                             const ObRecycleObject &recycle_obj,
                                                             ObSchemaGetterGuard &guard) {

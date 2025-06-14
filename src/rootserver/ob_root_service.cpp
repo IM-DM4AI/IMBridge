@@ -6520,6 +6520,26 @@ int ObRootService::drop_python_udf(const obrpc::ObDropPythonUdfArg &arg)
   return ret;
 }
 
+int ObRootService::imlane_control(const obrpc::ObImlaneControlArg &arg)
+{
+  int ret = OB_SUCCESS;
+  LOG_WARN("imlane : ObRootService::imlane_control");
+  if (!inited_) {
+    ret = OB_NOT_INIT;
+    LOG_WARN("not init", K(ret));
+  } else if (!arg.is_launch_) {
+    if (OB_FAIL(ddl_service_.imlane_destroy(arg))) {
+      LOG_WARN("failed to destroy imlane", K(ret));
+    }
+  } else if(arg.launch_arg_2_>1||arg.launch_arg_2_<0){
+    ret = OB_INVALID_ARGUMENT_NUM;
+  } else if (OB_FAIL(ddl_service_.imlane_launch(arg))) {
+    LOG_WARN("failed to launch imlane", K(arg), K(ret));
+  } else {/*do nothing*/}
+
+  return ret;
+}
+
 bool ObRootService::is_sys_tenant(const ObString &tenant_name)
 {
   return (0 == tenant_name.case_compare(OB_SYS_TENANT_NAME)

@@ -142,6 +142,7 @@ void oceanbase::observer::init_srv_xlator_for_rootserver(ObSrvRpcXlator *xlator)
     RPC_PROCESSOR(rootserver::ObRpcDoSequenceDDLP, *gctx_.root_service_);
     RPC_PROCESSOR(rootserver::ObRpcCreateUDTP, *gctx_.root_service_);
     RPC_PROCESSOR(rootserver::ObRpcDropUDTP, *gctx_.root_service_);
+    RPC_PROCESSOR(rootserver::ObRpcImlaneControlP, *gctx_.root_service_);
     RPC_PROCESSOR(rootserver::ObRpcOptimizeTableP, *gctx_.root_service_);
     RPC_PROCESSOR(rootserver::ObRpcSchemaReviseP, *gctx_.root_service_);
     RPC_PROCESSOR(rootserver::ObRpcDoKeystoreDDLP, *gctx_.root_service_);

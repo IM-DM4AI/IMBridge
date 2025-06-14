@@ -9689,6 +9689,24 @@ int ObDDLOperator::drop_trigger_cascade(const ObTableSchema &table_schema,
   return ret;
 }
 
+int ObDDLOperator::imlane_launch(const int arg_1,
+                    const float arg_2,
+                    common::ObMySQLTransaction &trans){
+  int ret = OB_SUCCESS;
+  //imlane todo
+  LOG_WARN("imlane launch with args:", K(arg_1), K(arg_2));
+  //end
+  return ret;
+}
+
+int ObDDLOperator::imlane_destroy(common::ObMySQLTransaction &trans){
+  int ret = OB_SUCCESS;
+  //imlane todo
+  LOG_WARN("imlane destroy");
+  //end
+  return ret;
+}
+
 int ObDDLOperator::drop_inner_generated_index_column(ObMySQLTransaction &trans,
                                                     ObSchemaGetterGuard &schema_guard,
                                                     const ObTableSchema &index_schema,

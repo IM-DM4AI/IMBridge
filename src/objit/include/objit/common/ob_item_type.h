@@ -2438,6 +2438,7 @@ typedef enum ObItemType
   T_PYTHON_CODE_TYPE,
   T_PYTHON_CODE,
   T_FILE_PATH,
+  T_IMLANE_CONTROL,
 
   T_MAX //Attention: add a new type before T_MAX
 } ObItemType;

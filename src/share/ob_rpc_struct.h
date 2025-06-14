@@ -6596,6 +6596,20 @@ public:
   bool if_exist_;
 };
 
+struct ObImlaneControlArg : public ObDDLArg
+{
+  OB_UNIS_VERSION(1);
+public:
+  ObImlaneControlArg(): ObDDLArg(), tenant_id_(common::OB_INVALID_ID), is_launch_(false) {}
+  virtual ~ObImlaneControlArg() {}
+  TO_STRING_KV(K_(tenant_id));
+
+  uint64_t tenant_id_;
+  bool is_launch_;
+  int64_t launch_arg_1_;
+  double launch_arg_2_;
+};
+
 struct ObCreateOutlineArg : public ObDDLArg
 {
   OB_UNIS_VERSION(1);
