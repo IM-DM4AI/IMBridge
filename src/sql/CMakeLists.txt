@@ -127,6 +127,7 @@ ob_set_subtarget(ob_sql engine
   engine/user_defined_function/ob_user_defined_function.cpp
   engine/window_function/ob_window_function_op.cpp
   engine/python_udf_engine/ob_python_udf_op.cpp   # IMBridge_CMake
+  engine/python_udf_engine/ob_async_state_slots.cpp   # IMLane_async
   engine/python_udf_engine/ob_arrow_transform_util.cpp # IMLane_file
   engine/opt_statistics/ob_optimizer_stats_gathering_op.cpp
   engine/sort/ob_sort_vec_op.cpp

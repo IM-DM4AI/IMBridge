@@ -85,19 +85,19 @@ int main(int argc, char **argv)
 	PyObject *dycacher = PyImport_ImportModule("dycacher");
 	if (!dycacher)
 	{
-		log("Failed to import module 'dycacher'\n"+python_error());
+		log("Failed to import module 'dycacher'\n"+python_error(), true);
 	}
 
 	PyObject *reset_func = PyObject_GetAttrString(dycacher, "reset_cache");
 	if (!reset_func)
 	{
-		log("Failed to get 'reset_cache' function from 'dycacher'\n"+python_error());
+		log("Failed to get 'reset_cache' function from 'dycacher'\n"+python_error(), true);
 		Py_DECREF(dycacher);
 	}
 
 	if (arrow::py::import_pyarrow())
 	{
-		log("import pyarrow error! Make sure your default python environment has installed the pyarrow");
+		log("import pyarrow error! Make sure your default python environment has installed the pyarrow", true);
 		exit(0);
 	}
 
@@ -116,7 +116,7 @@ int main(int argc, char **argv)
 	PyObject *my_process_instance = PyObject_CallObject(MyProcess, NULL);
 	if (my_process_instance == NULL)
 	{
-		log("Failed to create MyProcess instance\n"+python_error());
+		log("Failed to create MyProcess instance\n"+python_error(), true);
 		return 0;
 	}
 	scheduler.push_id_to_avaliable_queue(channel_name_int);
@@ -145,7 +145,7 @@ int main(int argc, char **argv)
 			}
 			else
 			{
-				log("Failed to process table\n" + python_error());
+				log("Failed to process table\n" + python_error(), true);
 				return 0;
 			}
 			log("handle finished");
@@ -169,12 +169,12 @@ int main(int argc, char **argv)
 			PyObject *res = PyObject_CallObject(reset_func, NULL);
 			if (!res)
 			{
-				log("Failed to reset cache\n" + python_error());
+				log("Failed to reset cache\n" + python_error(), true);
 			}
 			break;
 		}
 		default:
-			log("Invalid command " + std::to_string(cmd));
+			log("Invalid command " + std::to_string(cmd), true);
 			throw std::invalid_argument("[Server] Invalid command " + std::to_string(cmd));
 		}
 	}

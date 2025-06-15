@@ -9,7 +9,10 @@
 #include <memory>
 #include <thread>
 #include <unordered_map>
-
+#include "concurrentqueue.h"
+#include "lightweightsemaphore.h"
+typedef duckdb_moodycamel::ConcurrentQueue<std::function<void()>> queue_t;
+typedef duckdb_moodycamel::LightweightSemaphore semaphore_t;
 namespace oceanbase
 {
     namespace sql
@@ -31,7 +34,66 @@ namespace oceanbase
         const std::string START_SERVER_COMMAND = "/home/IMBridge/imlane_server/server_start.sh  ";
         const int BASE_ID = 100000;
 
-        struct AsyncScheduler;
+        struct AsyncScheduler
+        {
+            int sys_cpu_core_nums;
+            std::vector<std::unique_ptr<std::thread>> async_workers;
+            std::unique_ptr<queue_t> async_queue;
+            std::unique_ptr<semaphore_t> async_semaphore;
+            std::atomic<bool> async_stop;
+
+            AsyncScheduler(int sys_core) : sys_cpu_core_nums(sys_core), async_stop(false)
+            {
+                async_semaphore = std::make_unique<semaphore_t>();
+                async_queue = std::make_unique<queue_t>(sys_cpu_core_nums);
+                for (size_t i = 0; i < sys_cpu_core_nums; i++)
+                {
+                    async_workers.emplace_back(std::make_unique<std::thread>([this]
+                                                                             {
+				while (!this->async_stop) {
+					this->async_semaphore->wait();
+					std::function<void()> task;
+					if (this->async_queue->try_dequeue(task)) {
+						task();
+					}
+				} }));
+                }
+            }
+            ~AsyncScheduler()
+            {
+                async_stop = true;
+                async_semaphore->signal(async_workers.size());
+                for (auto &worker : async_workers)
+                {
+                    worker->join();
+                }
+                async_workers.clear();
+            }
+
+            template <class F, class... Args>
+            auto enqueue(F &&f, Args &&...args) -> std::future<typename std::result_of<F(Args...)>::type>*
+            {
+                using returnType = typename std::result_of<F(Args...)>::type;
+
+                if (async_stop)
+                {
+                    throw std::runtime_error("enqueue on stopped ThreadPool");
+                }
+
+                // 使用 std::bind 替代 std::apply
+                auto task = std::make_shared<std::packaged_task<returnType()>>(
+                    std::bind(std::forward<F>(f), std::forward<Args>(args)...));
+
+                bool success = async_queue->enqueue([task]()
+                                                    { (*task)(); });
+                if (success)
+                {
+                    async_semaphore->signal();
+                    return new std::future<returnType>(task->get_future());
+                }
+                return nullptr;
+            }
+        };
 
         class IMLaneScheduler
         {
@@ -59,18 +121,19 @@ namespace oceanbase
 
             int get_max_process();
 
+
             static std::unique_ptr<IMLaneScheduler>& GetOrCreateInstance(bool is_manager = false, int sys_core = 0, int lane_id = -100,
                             const size_t size = SHARED_MEMORY_SIZE);
 
             int warm_up = 1000; // ms
             // Use for async task
             std::unique_ptr<AsyncScheduler> async_scheduler;
-
+            // cpu cores count
+            int sys_cpu_core_nums = 0;
         private:
             static std::unique_ptr<IMLaneScheduler> scheduler_instance; 
             class Impl;
             Impl *impl;
-            int sys_cpu_core_nums = 0;
             bool is_manager;
             // only manager use
             std::atomic<int> working_threads_num;

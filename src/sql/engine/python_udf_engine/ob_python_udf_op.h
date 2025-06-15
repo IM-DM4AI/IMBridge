@@ -166,6 +166,7 @@ public:
   int free();
   int store(ObEvalCtx &eval_ctx, ObBatchRows &brs);
   int process();
+  int async_process(int id);
   int restore(ObEvalCtx &eval_ctx, ObBatchRows &brs, int64_t output_size);
   int resize(int64_t size); // 扩容
   int get_desirable() { // 根据各cell的predict size确定desirable的大小
@@ -236,6 +237,7 @@ private:
 
 private:
   int predict_size_; //每次python udf计算的元组数
+  int slots_id = -1; // async slots id
   ObPUStoreController controller_;
 
   void* _save; //for Python Interpreter Thread State

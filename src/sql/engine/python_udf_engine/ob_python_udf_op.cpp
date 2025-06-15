@@ -4,8 +4,10 @@
 #include "ob_udf_scheduler.h"
 #include "ob_shared_memory_manager.h"
 #include "ob_arrow_transform_util.h"
+#include "ob_async_state_slots.h"
 #include "sql/engine/ob_physical_plan.h"
 #include "sql/engine/ob_exec_context.h"
+#include <mutex>
 
 namespace oceanbase
 {
@@ -14,6 +16,8 @@ namespace sql
 {
 
 static bool with_batch_control_ = false; // 是否进行batch size控制
+
+static bool with_async_execute = true; // Whether use async execute
 
 OB_SERIALIZE_MEMBER((ObPythonUDFSpec, ObOpSpec),
                     udf_exprs_,
@@ -58,7 +62,15 @@ int ObPythonUDFOp::inner_open()
 
   // init context
   const uint64_t tenant_id = ctx_.get_my_session()->get_effective_tenant_id();
-  if (OB_FAIL(controller_.init(MY_SPEC.max_batch_size_,
+  // create async slots
+  AsyncStateSlots* slots = AsyncStateSlots::GetOrCreateInstance(IMLaneScheduler::GetOrCreateInstance()->sys_cpu_core_nums);
+  if(with_async_execute && slots != nullptr && OB_FAIL(slots->InitControllerSlots(MY_SPEC.max_batch_size_,
+                                                                                  MY_SPEC.udf_exprs_, 
+                                                                                  MY_SPEC.input_exprs_,
+                                                                                  tenant_id))){
+    ret = OB_INIT_FAIL;
+    LOG_WARN("Init controller slots failed", K(ret));                                          
+  }else if (OB_FAIL(controller_.init(MY_SPEC.max_batch_size_,
                                MY_SPEC.udf_exprs_, 
                                MY_SPEC.input_exprs_,
                                tenant_id))) {
@@ -166,12 +178,118 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
   //struct timeval t1, t2;
   //gettimeofday(&t1, NULL);
   
-  if (with_batch_control_) {
-    if (OB_SUCC(ret) && !controller_.can_output()) {
-      clear_evaluated_flag();
-      controller_.resize(controller_.get_desirable() * BUFFER_MAG);
-      const ObBatchRows *child_brs = nullptr;
-      while (OB_SUCC(ret) && !brs_.end_ && !controller_.is_full()) { // while loop直至缓存填满
+  if(with_async_execute){// async execute
+    clear_evaluated_flag();
+    const ObBatchRows *child_brs = nullptr;
+    AsyncStateSlots *slots = AsyncStateSlots::GetOrCreateInstance();
+    auto &scheduler = IMLaneScheduler::GetOrCreateInstance(true);
+    bool no_data_to_return = true;
+    while (ret == OB_SUCCESS && no_data_to_return)
+    {
+      // slots_id == -1 means: current operator is not using async slots to store data
+      // slots_id != -1 means: have used slots but no create async task、
+      if(!brs_.end_ && slots_id == -1){
+        if (OB_FAIL(child_->get_next_batch(max_row_cnt, child_brs)))
+        {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_ERROR("Get child next batch failed.", K(ret));
+        }
+        else if (brs_.copy(child_brs))
+        {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_ERROR("Copy child batch rows failed.", K(ret));
+        }
+      }
+
+      if (!brs_.end_ && slots_id == -1)
+      {
+        slots_id = slots->get_slot_id_from_queue();
+      }
+      if (slots_id == -1)
+      { // no slots, handle output
+        std::lock_guard<std::mutex> lock(slots->res_save); // 加锁保护 res_collect
+        for (int i = 0; no_data_to_return && i < slots->res_collect.size(); i++)
+        {
+          std::future<int>* it = slots->res_collect[i];
+          if (it->wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+          {
+            try
+            {
+              int id = it->get();
+              auto *controller_slot = slots->controller_slots[id];
+              if(OB_FAIL(controller_slot->restore(eval_ctx_, brs_, max_row_cnt))){
+                ret = OB_ERR_UNEXPECTED;
+                LOG_ERROR("Restore output batchrows failed.", K(ret));
+              }else{
+                // reset all spec filters
+                FOREACH_CNT_X(e, MY_SPEC.filters_, OB_SUCC(ret)) {
+                  (*e)->clear_evaluated_flag(eval_ctx_);
+                  (*e)->get_eval_info(eval_ctx_).clear_evaluated_flag();
+                }
+              }
+              delete it;                      // delete future
+              slots->res_collect.erase(slots->res_collect.begin() + i);    // remove future
+              slots->set_slot_id_to_queue(id); // add id to queue
+              no_data_to_return = false;
+            }
+            catch (const std::exception &e)
+            {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WARN("Process async python udf collect failed.", K(ret));
+              break;
+            }
+          }
+        }
+      }
+      else
+      { // has slots, handle input
+        int id = slots_id;
+        auto *controller_slot = slots->controller_slots[slots_id];
+        ret = controller_slot->store(eval_ctx_, brs_); // write input
+        if(ret == OB_SUCCESS){
+        std::future<int> *async_res = scheduler->async_scheduler->enqueue([controller_slot, id]()
+                                                        { return controller_slot->async_process(id); });
+        if (async_res != nullptr)
+        {
+          slots_id = -1;
+          slots->res_collect.push_back(async_res);
+        }
+        }
+      }
+    }
+  }else{
+    if (with_batch_control_) {
+      if (OB_SUCC(ret) && !controller_.can_output()) {
+        clear_evaluated_flag();
+        controller_.resize(controller_.get_desirable() * BUFFER_MAG);
+        const ObBatchRows *child_brs = nullptr;
+        while (OB_SUCC(ret) && !brs_.end_ && !controller_.is_full()) { // while loop直至缓存填满
+          if (OB_FAIL(child_->get_next_batch(max_row_cnt, child_brs))) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("Get child next batch failed.", K(ret));
+          } else if (brs_.copy(child_brs)) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("Copy child batch rows failed.", K(ret));
+          } else if (OB_FAIL(controller_.store(eval_ctx_, brs_))){
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("Save input batchrows failed.", K(ret));
+          }
+        }
+        if (OB_FAIL(ret) || OB_FAIL(controller_.process())) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("Process python udf failed.", K(ret));
+        }
+      }
+    } else { // 无batch size控制
+      if (OB_SUCC(ret)) { 
+        clear_evaluated_flag();
+        const ObBatchRows *child_brs = nullptr;
+        /*
+        if(OB_FAIL(controller_.resize(controller_.get_desirable() * BUFFER_MAG))){
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("Do Python UDF Cell resize failed.", K(ret));
+        }
+        else */ // schedule execute
         if (OB_FAIL(child_->get_next_batch(max_row_cnt, child_brs))) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WARN("Get child next batch failed.", K(ret));
@@ -181,47 +299,22 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
         } else if (OB_FAIL(controller_.store(eval_ctx_, brs_))){
           ret = OB_ERR_UNEXPECTED;
           LOG_WARN("Save input batchrows failed.", K(ret));
-        }
-      }
-      if (OB_FAIL(ret) || OB_FAIL(controller_.process())) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("Process python udf failed.", K(ret));
+        } else if (OB_FAIL(controller_.process())) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("Process python udf failed.", K(ret));
+        } else {}
       }
     }
-  } else { // 无batch size控制
-    if (OB_SUCC(ret)) { 
-      clear_evaluated_flag();
-      const ObBatchRows *child_brs = nullptr;
-      /*
-      if(OB_FAIL(controller_.resize(controller_.get_desirable() * BUFFER_MAG))){
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("Do Python UDF Cell resize failed.", K(ret));
-      }
-      else */
-      if (OB_FAIL(child_->get_next_batch(max_row_cnt, child_brs))) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("Get child next batch failed.", K(ret));
-      } else if (brs_.copy(child_brs)) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("Copy child batch rows failed.", K(ret));
-      } else if (OB_FAIL(controller_.store(eval_ctx_, brs_))){
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("Save input batchrows failed.", K(ret));
-      } else if (OB_FAIL(controller_.process())) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("Process python udf failed.", K(ret));
-      } else {}
-    }
-  }
 
-  if (OB_FAIL(ret) || OB_FAIL(controller_.restore(eval_ctx_, brs_, max_row_cnt))) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("Restore output batchrows failed.", K(ret));
-  } else {
-    // reset all spec filters
-    FOREACH_CNT_X(e, MY_SPEC.filters_, OB_SUCC(ret)) {
-      (*e)->clear_evaluated_flag(eval_ctx_);
-      (*e)->get_eval_info(eval_ctx_).clear_evaluated_flag();
+    if (OB_FAIL(ret) || OB_FAIL(controller_.restore(eval_ctx_, brs_, max_row_cnt))) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("Restore output batchrows failed.", K(ret));
+    } else {
+      // reset all spec filters
+      FOREACH_CNT_X(e, MY_SPEC.filters_, OB_SUCC(ret)) {
+        (*e)->clear_evaluated_flag(eval_ctx_);
+        (*e)->get_eval_info(eval_ctx_).clear_evaluated_flag();
+      }
     }
   }
   /*gettimeofday(&t2, NULL);
@@ -1051,7 +1144,6 @@ int ObPythonUDFCell::do_restore_batch(ObEvalCtx &eval_ctx, int64_t output_idx, i
   }
   */
   SharedMemoryManager shm(std::to_string(shm_lane_id), ProcessKind::CLIENT);
-  shm.client_wait();
   if(!read_arrow_from_shared_memory(result_arrow_store_, shm, OUTPUT_TABLE)){
     ret = OB_ERR_UNEXPECTED_UNIT_STATUS;
     LOG_WARN("Failed to write arrow table to shared memory", K(ret));
@@ -1129,7 +1221,6 @@ int ObPythonUDFCell::do_restore_vector(ObEvalCtx &eval_ctx, int64_t output_idx, 
   }
   */
   SharedMemoryManager shm(std::to_string(shm_lane_id), ProcessKind::CLIENT);
-  shm.client_wait();
   if(!read_arrow_from_shared_memory(result_arrow_store_, shm, OUTPUT_TABLE)){
     ret = OB_ERR_UNEXPECTED_UNIT_STATUS;
     LOG_WARN("Failed to write arrow table to shared memory", K(ret));
@@ -1330,6 +1421,7 @@ int ObPythonUDFCell::eval(PyObject *pArgs, int64_t eval_size)
     return ret;
   }
   scheduler->push_cmd_to_task_queue(shm_lane_id, TASK_UDF_INFER);
+  shm.client_wait();
   result_size_ += eval_size;
   return ret;
 }
@@ -1511,6 +1603,52 @@ int ObPUStoreController::process()
     time_log2.close(); */
   }
   return ret;
+}
+
+int ObPUStoreController::async_process(int id)
+{
+  int ret = OB_SUCCESS;
+  if (is_empty()) {
+    /* do nothing */
+  } else {
+    //struct timeval t3, t4;
+    //gettimeofday(&t3, NULL);
+    
+    ObPythonUDFCell* header = cells_list_.get_header();
+    for (ObPythonUDFCell* cell = cells_list_.get_first(); 
+        cell != header && OB_SUCC(ret); 
+        cell = cell->get_next()) {
+      if (cell->get_store_size() != stored_input_cnt_) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("Unsaved input rows.", K(ret));
+      } else if (OB_FAIL(cell->do_process_all())) {  // without predict size control
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("Do Python UDF Cell process all udf failed.", K(ret));
+      } else if (cell->get_result_size() != stored_input_cnt_){
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("Unprocessed input rows.", K(ret));
+      } else {
+        cell->reset_input_store();
+      }
+    }
+    if (OB_SUCC(ret)) {
+      stored_output_cnt_ = stored_input_cnt_;
+      stored_input_cnt_ = 0;
+      output_idx_ = 0;
+    }
+
+    /*
+    // pf time log
+    gettimeofday(&t4, NULL);
+    double timeuse2 = (t4.tv_sec - t3.tv_sec) * 1000000 + (double)(t4.tv_usec - t3.tv_usec); // usec
+    double time_s2 = timeuse2 / 1000;
+    std::fstream time_log2;
+    time_log2.open("/home/test/experiments/oceanbase/revision/batch_control_overhead/process_time.log", std::ios::app);
+    time_log2 << "process time: " << time_s2 << std::endl;
+    time_log2.close(); */
+  }
+  if(ret == OB_SUCCESS) return id;
+  return -1;
 }
 
 int ObPUStoreController::restore(ObEvalCtx &eval_ctx, ObBatchRows &brs, int64_t max_row_cnt)
