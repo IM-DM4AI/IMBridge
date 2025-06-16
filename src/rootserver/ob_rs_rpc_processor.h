@@ -439,6 +439,8 @@ DEFINE_DDL_RS_RPC_PROCESSOR(obrpc::OB_DROP_USER_DEFINED_FUNCTION, ObRpcDropUserD
 DEFINE_DDL_RS_RPC_PROCESSOR(obrpc::OB_CREATE_PYTHON_UDF, ObRpcCreatePythonUdfP, create_python_udf(arg_));
 DEFINE_DDL_RS_RPC_PROCESSOR(obrpc::OB_DROP_PYTHON_UDF, ObRpcDropPythonUdfP, drop_python_udf(arg_));
 
+DEFINE_DDL_RS_RPC_PROCESSOR(obrpc::OB_IMLANE_CONTROL, ObRpcImlaneControlP, imlane_control(arg_));
+
 //package ddl
 DEFINE_DDL_RS_RPC_PROCESSOR(obrpc::OB_CREATE_PACKAGE, ObRpcCreatePackageP, create_package(arg_));
 DEFINE_DDL_RS_RPC_PROCESSOR(obrpc::OB_ALTER_PACKAGE, ObRpcAlterPackageP, alter_package(arg_));

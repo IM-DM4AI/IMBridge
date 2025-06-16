@@ -274,7 +274,7 @@ END_P SET_VAR DELIMITER
         CTXCAT CTX_ID CUBE CURDATE CURRENT STACKED CURTIME CURSOR_NAME CUME_DIST CYCLE CALC_PARTITION_ID CONNECT
 
         DAG DATA DATAFILE DATA_TABLE_ID DATE DATE_ADD DATE_SUB DATETIME DAY DEALLOCATE DECRYPTION
-        DEFAULT_AUTH DEFAULT_LOB_INROW_THRESHOLD DEFINER DELAY DELAY_KEY_WRITE DEPTH DES_KEY_FILE DENSE_RANK DESCRIPTION DESTINATION DIAGNOSTICS
+        DEFAULT_AUTH DEFAULT_LOB_INROW_THRESHOLD DEFINER DELAY DELAY_KEY_WRITE DEPTH DESTROY DES_KEY_FILE DENSE_RANK DESCRIPTION DESTINATION DIAGNOSTICS
         DIRECTORY DISABLE DISCARD DISK DISKGROUP DO DUMP DUMPFILE DUPLICATE DUPLICATE_SCOPE DYNAMIC
         DATABASE_ID DEFAULT_TABLEGROUP DISCONNECT DEMAND
 
@@ -291,7 +291,7 @@ END_P SET_VAR DELIMITER
 
         HANDLER HASH HELP HISTOGRAM HOST HOSTS HOUR HIDDEN HYBRID_HIST
 
-        ID IDC IDENTIFIED IGNORE_SERVER_IDS ILOG IMMEDIATE IMPORT INCLUDING INCR INDEXES INDEX_TABLE_ID INFO INITIAL_SIZE
+        ID IDC IDENTIFIED IGNORE_SERVER_IDS ILOG IMLANE IMMEDIATE IMPORT INCLUDING INCR INDEXES INDEX_TABLE_ID INFO INITIAL_SIZE
         INNODB INSERT_METHOD INSTALL INSTANCE INVOKER IO IOPS_WEIGHT IO_THREAD IPC ISOLATE ISOLATION ISSUER
         INCREMENT IS_TENANT_SYS_POOL INVISIBLE MERGE ISNULL INTERSECT INCREMENTAL INNER_PARSE ILOGCACHE INPUT INDEXED
 
@@ -299,7 +299,7 @@ END_P SET_VAR DELIMITER
 
         KEY_BLOCK_SIZE KEY_VERSION KVCACHE KV_ATTRIBUTES
 
-        LAG LANGUAGE LAST LAST_VALUE LEAD LEADER LEAVES LESS LEAK LEAK_MOD LEAK_RATE LIB LINESTRING LIST_
+        LAG LANGUAGE LAST LAST_VALUE LAUNCH LEAD LEADER LEAVES LESS LEAK LEAK_MOD LEAK_RATE LIB LINESTRING LIST_
         LISTAGG LOB_INROW_THRESHOLD LOCAL LOCALITY LOCATION LOCKED LOCKS LOGFILE LOGONLY_REPLICA_NUM LOGS LOCK_ LOGICAL_READS
 
         LEVEL LN LOG LS LINK LOG_RESTORE_SOURCE LINE_DELIMITER
@@ -539,6 +539,7 @@ END_P SET_VAR DELIMITER
 /*IMBridge Metadata*/ 
 %type <node> create_python_udf_stmt drop_python_udf_stmt
 %type <node> function_element_list function_element param_name param_type python_code_type
+%type <node> imlane_create_stmt imlane_destroy_stmt
 %start sql_stmt
 %%
 ////////////////////////////////////////////////////////////////
@@ -597,6 +598,8 @@ stmt:
   | drop_function_stmt      { $$ = $1; check_question_mark($$, result); }
   | create_python_udf_stmt  { $$ = $1; check_question_mark($$, result); }
   | drop_python_udf_stmt    { $$ = $1; check_question_mark($$, result); }
+  | imlane_create_stmt      { $$ = $1; check_question_mark($$, result); }
+  | imlane_destroy_stmt     { $$ = $1; check_question_mark($$, result); }
   | create_table_like_stmt  { $$ = $1; check_question_mark($$, result); }
   | create_database_stmt    { $$ = $1; check_question_mark($$, result); }
   | drop_database_stmt      { $$ = $1; check_question_mark($$, result); }
@@ -5046,6 +5049,21 @@ DROP PYTHON_UDF opt_if_exists NAME_OB
   malloc_non_terminal_node($$, result->malloc_pool_, T_DROP_PYTHON_UDF, 2, $3, $4);
 }
 ;
+
+imlane_create_stmt:
+IMLANE LAUNCH '(' INTNUM ',' DECIMAL_VAL ')'
+{
+  malloc_non_terminal_node($$, result->malloc_pool_, T_IMLANE_CONTROL,2,
+                            $4, //imlane arg 1
+                            $6  //imlane arg 2
+                            );
+};
+
+imlane_destroy_stmt:
+IMLANE DESTROY
+{
+  malloc_terminal_node($$, result->malloc_pool_, T_IMLANE_CONTROL);
+};
 
 function_element_list:
 function_element

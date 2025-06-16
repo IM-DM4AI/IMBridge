@@ -79,6 +79,7 @@
 #include "share/schema/ob_mview_info.h"
 #include "share/schema/ob_mview_refresh_stats_params.h"
 #include "storage/mview/ob_mview_sched_job_utils.h"
+#include "sql/engine/python_udf_engine/ob_udf_scheduler.h"
 
 namespace oceanbase
 {
@@ -9686,6 +9687,27 @@ int ObDDLOperator::drop_trigger_cascade(const ObTableSchema &table_schema,
     OV (OB_NOT_NULL(trigger_info));
     OZ (drop_trigger(*trigger_info, trans, NULL), trigger_info);
   }
+  return ret;
+}
+
+int ObDDLOperator::imlane_launch(const int arg_1,
+                    const float arg_2,
+                    common::ObMySQLTransaction &trans){
+  int ret = OB_SUCCESS;
+  //imlane todo
+  LOG_WARN("imlane launch with args:", K(arg_1), K(arg_2));
+  IMLaneScheduler::GetOrCreateInstance(true);
+  //end
+  return ret;
+}
+
+int ObDDLOperator::imlane_destroy(common::ObMySQLTransaction &trans){
+  int ret = OB_SUCCESS;
+  //imlane todo
+  LOG_WARN("imlane destroy");
+  auto &scheduler =  IMLaneScheduler::GetOrCreateInstance(true);
+  scheduler.reset();
+  //end
   return ret;
 }
 

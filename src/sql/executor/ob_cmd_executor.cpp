@@ -165,7 +165,8 @@
 #include "sql/engine/cmd/ob_audit_executor.h"
 #endif
 #include "sql/engine/cmd/ob_python_udf_executor.h"
-
+#include "sql/resolver/ddl/ob_imlane_control_stmt.h"
+#include "sql/engine/cmd/ob_imlane_control_executor.h"
 namespace oceanbase
 {
 using namespace common;
@@ -813,6 +814,10 @@ int ObCmdExecutor::execute(ObExecContext &ctx, ObICmd &cmd)
       }
       case stmt::T_DROP_PYTHON_UDF: {
         DEFINE_EXECUTE_CMD(ObDropPythonUdfStmt, ObDropPythonUdfExecutor);
+        break;
+      }
+      case stmt::T_IMLANE_CONTROL: {
+        DEFINE_EXECUTE_CMD(ObImlaneControlStmt, ObIMLaneControlExecutor);
         break;
       }
       case stmt::T_CREATE_SEQUENCE: {
