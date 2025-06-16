@@ -84,7 +84,6 @@ namespace oceanbase
                 impl->all_task_queues.clear();
                 async_scheduler.reset();
                 bi::message_queue::remove(AVALIABLE_QUEUE_NAME.c_str());
-                async_scheduler->~AsyncScheduler();
             }
             else
             {
