@@ -142,15 +142,15 @@ namespace oceanbase
         {
             return total_threads_num;
         }
-        std::unique_ptr<IMLaneScheduler> IMLaneScheduler::scheduler_instance = nullptr; 
-        std::unique_ptr<IMLaneScheduler> &IMLaneScheduler::GetOrCreateInstance(bool is_manager, int sys_core, int lane_id,
-                                                                                      const size_t size)
+        std::unique_ptr<IMLaneScheduler> IMLaneScheduler::scheduler_instance = nullptr;
+        std::unique_ptr<IMLaneScheduler> &IMLaneScheduler::GetOrCreateInstance(bool is_manager, int sys_core, float threshold, int lane_id,
+                                                                               const size_t size)
         {
             if (IMLaneScheduler::scheduler_instance.get() == nullptr)
             {
                 if (is_manager)
                 {
-                    sys_core = std::thread::hardware_concurrency();
+                    int t_sys_core = std::thread::hardware_concurrency();
                     const std::string quota_path = "/sys/fs/cgroup/cpu/cpu.cfs_quota_us";
                     const std::string period_path = "/sys/fs/cgroup/cpu/cpu.cfs_period_us";
 
@@ -164,14 +164,14 @@ namespace oceanbase
 
                         if (quota > 0 && period > 0)
                         {
-                            sys_core = std::min(static_cast<int>(quota / period), sys_core);
+                            t_sys_core = std::min(static_cast<int>(quota / period), t_sys_core);
                         }
                     }
-                    sys_core = std::max(sys_core, 1);
+                    t_sys_core = std::max(t_sys_core, 1);
+                    sys_core = sys_core > 0 ? std::min(sys_core, t_sys_core) : t_sys_core;
                 }
-                sys_core = 8;
                 IMLaneScheduler::scheduler_instance = std::make_unique<IMLaneScheduler>(is_manager, sys_core, lane_id, size);
-                IMLaneScheduler::scheduler_instance->launch();
+                IMLaneScheduler::scheduler_instance->launch(threshold, sys_core);
             }
             return IMLaneScheduler::scheduler_instance;
         }

@@ -581,7 +581,7 @@ int ObMultiTenant::init(ObAddr myaddr,
     SpinWLockGuard guard(lock_);
     if (!Py_IsInitialized()) {
       Py_InitializeEx(0);
-      IMLaneScheduler::GetOrCreateInstance(true);
+      // IMLaneScheduler::GetOrCreateInstance(true);
       // PyImport_ImportModule("dycacher");
       // PyImport_ImportModule("numpy");
       // PyImport_ImportModule("torch");

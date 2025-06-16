@@ -186,3 +186,4 @@ ob_set_subtarget(ob_rootserver mview
 )
 
 ob_server_add_target(ob_rootserver)
+target_link_libraries(ob_rootserver PUBLIC steve)

@@ -122,7 +122,7 @@ namespace oceanbase
             int get_max_process();
 
 
-            static std::unique_ptr<IMLaneScheduler>& GetOrCreateInstance(bool is_manager = false, int sys_core = 0, int lane_id = -100,
+            static std::unique_ptr<IMLaneScheduler>& GetOrCreateInstance(bool is_manager = false, int sys_core = 0, float threshold = 0.7, int lane_id = -100,
                             const size_t size = SHARED_MEMORY_SIZE);
 
             int warm_up = 1000; // ms

@@ -9696,7 +9696,7 @@ int ObDDLOperator::imlane_launch(const int arg_1,
   int ret = OB_SUCCESS;
   //imlane todo
   LOG_WARN("imlane launch with args:", K(arg_1), K(arg_2));
-  IMLaneScheduler::GetOrCreateInstance(true);
+  IMLaneScheduler::GetOrCreateInstance(true, arg_1, arg_2);
   //end
   return ret;
 }
@@ -9706,7 +9706,9 @@ int ObDDLOperator::imlane_destroy(common::ObMySQLTransaction &trans){
   //imlane todo
   LOG_WARN("imlane destroy");
   auto &scheduler =  IMLaneScheduler::GetOrCreateInstance(true);
-  scheduler.reset();
+  if(scheduler){
+    scheduler.reset();
+  }
   //end
   return ret;
 }
