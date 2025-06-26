@@ -6,6 +6,8 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder, L
 import torch
 from torch import nn
 
+torch.UntypedStorage.from_file()
+
 class MyModel(nn.Module):
     def __init__(self):
         super(MyModel, self).__init__()

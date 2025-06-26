@@ -192,6 +192,99 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
     bool no_data_to_return = true;
     while (OB_SUCC(ret) && no_data_to_return)
     {
+      // output first
+      if(slots->res_collect.size()){
+        LOG_INFO("[Clien] Handle output.", K(ret));
+        int future_id = slots->get_future_res();
+        if (future_id != -1){
+          try{
+            auto &controller_slot = slots->controller_slots[future_id];
+            LOG_INFO("[Clien] store output.", K(ret));
+            if (OB_FAIL(controller_slot->restore(eval_ctx_, brs_, max_row_cnt)))
+            {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_ERROR("Restore output batchrows failed.", K(ret));
+            }
+            else
+            {
+              // reset all spec filters
+              FOREACH_CNT_X(e, MY_SPEC.filters_, OB_SUCC(ret))
+              {
+                (*e)->clear_evaluated_flag(eval_ctx_);
+                (*e)->get_eval_info(eval_ctx_).clear_evaluated_flag();
+              }
+            }
+            if (OB_SUCC(ret))
+            {
+              LOG_INFO("[Clien] add id to queue.", K(ret));
+              slots->set_slot_id_to_queue(future_id); // add id to queue
+              no_data_to_return = false;
+            }
+          }catch (const std::exception &e)
+          {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("Process async python udf collect failed.", K(ret));
+            break;
+          }
+        }
+      }else{
+        if(brs_.end_){
+          LOG_INFO("[Clien] no data to pull.", K(ret));
+          return ret;
+        }
+        if (slots_id == -1)
+        {
+          int futrue_size = slots->res_collect.size();
+          int working_worker = scheduler->working_threads_num.load();
+          int queue_size = slots->queue_size.load();
+          slots_id = slots->get_slot_id_from_queue();
+          LOG_INFO("[Clien] get a slot id.", K(ret), K(slots_id), K(futrue_size), K(working_worker), K(queue_size));
+        }
+        if(slots_id != -1){
+          int id = slots_id;
+          auto &controller_slot = slots->controller_slots[id];
+          if (!save_input && !brs_.end_){
+            LOG_INFO("[Clien] pull input.", K(ret));
+            if (OB_FAIL(child_->get_next_batch(max_row_cnt, child_brs)))
+            {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_ERROR("Get child next batch failed.", K(ret));
+            }
+            else if (brs_.copy(child_brs))
+            {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_ERROR("Copy child batch rows failed.", K(ret));
+            }
+            if(!brs_.end_){
+              LOG_INFO("[Clien] store input.", K(ret));
+              if(OB_SUCC(controller_slot->store(eval_ctx_, brs_))){
+                save_input = true;
+              }else{
+                ret = OB_ERR_UNEXPECTED;
+                LOG_ERROR("failed to save input to slots.", K(ret));
+              }
+            }else{
+              slots->set_slot_id_to_queue(slots_id);
+              slots_id = -1;
+              id = -1;
+            }
+          }
+          if (OB_SUCC(ret) && id != -1){
+            LOG_INFO("[Clien] create async.", K(ret));
+            std::unique_ptr<std::future<int>> async_res = scheduler->async_scheduler->enqueue([controller=controller_slot.get(), id]()
+                                                                                            { return controller->async_process(id); });
+            if (async_res != nullptr && async_res->valid())
+            {
+              LOG_INFO("[Clien] save async.", K(ret));
+              slots_id = -1;
+              save_input = false;
+              slots->res_collect.push_back(std::move(async_res));
+            }
+          }
+        }
+      }
+
+      /*
       // slots_id == -1 means: current operator is not using async slots to store data
       // slots_id != -1 means: have used slots but no create async task、
       // 1. 确定是否有slots并且有数据可以拉取, 有就走创建任务，没有就走处理输出
@@ -280,6 +373,7 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
           }
         }
       }
+      */
     }
   }else{
     if (with_batch_control_) {
@@ -1179,6 +1273,8 @@ int ObPythonUDFCell::do_restore_batch(ObEvalCtx &eval_ctx, int64_t output_idx, i
   shm.destroy_shared_memory_object<char>(INPUT_TABLE);
   shm.destroy_shared_memory_object<char>(OUTPUT_TABLE);
   shm.server_post();
+  auto &scheduler =  IMLaneScheduler::GetOrCreateInstance(true);
+  scheduler->push_id_to_avaliable_queue(shm_lane_id);
   return ret;
 }
 
@@ -1256,6 +1352,8 @@ int ObPythonUDFCell::do_restore_vector(ObEvalCtx &eval_ctx, int64_t output_idx, 
   shm.destroy_shared_memory_object<char>(INPUT_TABLE);
   shm.destroy_shared_memory_object<char>(OUTPUT_TABLE);
   shm.server_post();
+  auto &scheduler =  IMLaneScheduler::GetOrCreateInstance(true);
+  scheduler->push_id_to_avaliable_queue(shm_lane_id);
   return ret;
 }
 

@@ -130,13 +130,13 @@ namespace oceanbase
             std::unique_ptr<AsyncScheduler> async_scheduler;
             // cpu cores count
             int sys_cpu_core_nums = 0;
+            std::atomic<int> working_threads_num;
         private:
             static std::unique_ptr<IMLaneScheduler> scheduler_instance; 
             class Impl;
             Impl *impl;
             bool is_manager;
             // only manager use
-            std::atomic<int> working_threads_num;
             int total_threads_num;
             bool use_async = false;
             double async_threshold = 0.7;

@@ -25,7 +25,7 @@ namespace oceanbase
             }
         };
 
-        AsyncStateSlots::AsyncStateSlots(int slots_num) : slots_num(slots_num) {
+        AsyncStateSlots::AsyncStateSlots(int slots_num) : queue_size(0),slots_num(slots_num) {
             id_queue = std::unique_ptr<SlotsQueue>(new SlotsQueue(slots_num));
         }
         std::unique_ptr<AsyncStateSlots>  AsyncStateSlots::slots_instance = nullptr;
@@ -84,12 +84,14 @@ namespace oceanbase
         {
             int slot_id;
             bool success = id_queue->try_dequeue(slot_id);
+            queue_size--;
             return success ? slot_id : -1;
         }
 
         bool AsyncStateSlots::set_slot_id_to_queue(int id)
         {
             bool success = id_queue->enqueue(id);
+            queue_size++;
             return success;
         }
 

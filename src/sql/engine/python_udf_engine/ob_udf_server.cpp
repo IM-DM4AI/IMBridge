@@ -156,7 +156,7 @@ int main(int argc, char **argv)
 			// TODO: update the avaliable queue
 			shm_server.server_wait();
 			log("end id");
-			scheduler.push_id_to_avaliable_queue(channel_name_int);
+			// scheduler.push_id_to_avaliable_queue(channel_name_int);
 			break;
 		}
 		case TASK_DESTROY:

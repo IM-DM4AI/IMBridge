@@ -33,6 +33,7 @@ namespace oceanbase
             static std::unique_ptr<AsyncStateSlots> slots_instance; 
             static std::mutex mutex_init; // init lock
             static std::atomic<int> destroy_cnt;
+            std::atomic<int> queue_size;
             std::mutex mutex_controller;
             std::mutex res_save;
             bool is_init = false; // init tag
