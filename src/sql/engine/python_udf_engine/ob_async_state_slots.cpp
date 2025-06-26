@@ -9,6 +9,7 @@ namespace oceanbase
     namespace sql
     {   
         std::mutex AsyncStateSlots::mutex_init;
+        std::atomic<int> AsyncStateSlots::destroy_cnt(0);
 
         struct SlotsQueue{
             slots_queue_t queue;
@@ -25,36 +26,30 @@ namespace oceanbase
         };
 
         AsyncStateSlots::AsyncStateSlots(int slots_num) : slots_num(slots_num) {
-            id_queue = new SlotsQueue(slots_num);
+            id_queue = std::unique_ptr<SlotsQueue>(new SlotsQueue(slots_num));
         }
-        AsyncStateSlots::~AsyncStateSlots()
+        std::unique_ptr<AsyncStateSlots>  AsyncStateSlots::slots_instance = nullptr;
+        std::unique_ptr<AsyncStateSlots> &AsyncStateSlots::GetOrCreateInstance(int slot_count)
         {
-            // reset every ObPUInputStore and ObColInputStore
-            for (int i = 0; i < slots_num; i++)
-            {
-                delete controller_slots[i];
+            if(slot_count != -1){ //create
+                destroy_cnt++;
             }
-            controller_slots.clear();
-            delete id_queue;
-        }
-        AsyncStateSlots *AsyncStateSlots::slots_instance = nullptr;
-        AsyncStateSlots *AsyncStateSlots::GetOrCreateInstance(int slot_count)
-        {
-            if (slots_instance == nullptr)
+            if (slots_instance == nullptr && slot_count != -1)
             {
                 std::lock_guard<std::mutex> lock(mutex_init);
-                if (slots_instance == nullptr && slot_count != -1)
+                if (slots_instance == nullptr)
                 {
-                    slots_instance = new AsyncStateSlots(slot_count);
+                    slots_instance = std::unique_ptr<AsyncStateSlots>(new AsyncStateSlots(slot_count));
                 }
             }
             return slots_instance;
         }
         void AsyncStateSlots::ResetInstance(){
-            if(slots_instance != nullptr){
+            destroy_cnt--;
+            if(slots_instance != nullptr && slots_instance->destroy_cnt.load() == 0){
                 std::lock_guard<std::mutex> lock(mutex_init);
                 if(slots_instance != nullptr){
-                    delete slots_instance;
+                    slots_instance.reset();
                     slots_instance = nullptr;
                 }
             }
@@ -70,14 +65,14 @@ namespace oceanbase
             {
                 for (int i = 0; i < slots_num && ret == OB_SUCCESS; i++)
                 {
-                    ObPUStoreController *slot = new ObPUStoreController();
+                    std::unique_ptr<ObPUStoreController> slot(new ObPUStoreController());
                     int init_ret = slot->init(batch_size, udf_exprs, input_exprs, tenant_id);
                     if (init_ret != OB_SUCCESS)
                     {
                         ret = OB_NOT_INIT;
                         return ret;
                     }
-                    controller_slots.push_back(slot);
+                    controller_slots.push_back(std::move(slot));
                     set_slot_id_to_queue(i);
                 }
                 is_init = true;
@@ -96,6 +91,32 @@ namespace oceanbase
         {
             bool success = id_queue->enqueue(id);
             return success;
+        }
+
+        int AsyncStateSlots::get_future_res()
+        {
+            int future_id = -1;
+            std::lock_guard<std::mutex> lock(res_save);
+            for (int i = 0; i < res_collect.size();)
+            {
+                auto &it = res_collect[i];
+                if (it && it->valid())
+                {
+                    if (it->wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+                    {
+                        future_id = it->get();
+                        res_collect.erase(res_collect.begin() + i);
+                        break;
+                    }else{
+                        i++;
+                    }
+                }
+                else
+                {
+                    res_collect.erase(res_collect.begin() + i);
+                }
+            }
+            return future_id;
         }
 
     } // end namespace sql

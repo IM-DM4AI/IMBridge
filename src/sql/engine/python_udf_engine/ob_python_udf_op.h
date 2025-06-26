@@ -238,6 +238,7 @@ private:
 private:
   int predict_size_; //每次python udf计算的元组数
   int slots_id = -1; // async slots id
+  bool save_input = false;
   ObPUStoreController controller_;
 
   void* _save; //for Python Interpreter Thread State

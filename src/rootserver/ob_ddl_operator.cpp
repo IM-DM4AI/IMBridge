@@ -9708,6 +9708,7 @@ int ObDDLOperator::imlane_destroy(common::ObMySQLTransaction &trans){
   auto &scheduler =  IMLaneScheduler::GetOrCreateInstance(true);
   if(scheduler){
     scheduler.reset();
+    scheduler = nullptr;
   }
   //end
   return ret;

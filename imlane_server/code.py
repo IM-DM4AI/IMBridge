@@ -1,82 +1,43 @@
-import warnings
 import joblib
 import pyarrow as pa
 import numpy as np
 import pandas as pd
-from statsmodels.tools.sm_exceptions import ValueWarning
-from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from imblearn.over_sampling import ADASYN
+from imblearn.pipeline import Pipeline as Imb_Pipeline
+from sklearn import metrics
+from sklearn.metrics import classification_report, confusion_matrix, f1_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+
 from threadpoolctl import threadpool_limits
-
-class UseCase03Model(object):
-    def __init__(self, use_store=False, use_department=True):
-        if not use_store and not use_department:
-            raise ValueError(f"use_store = {use_store}, use_department = {use_department}: at least one must be True")
-
-        self._use_store = use_store
-        self._use_department = use_department
-        self._models = {}
-        self._min = {}
-        self._max = {}
-
-    def _get_key(self, store, department):
-        if self._use_store and self._use_department:
-            key = (store, department)
-        elif self._use_store:
-            key = store
-        else:
-            key = department
-
-        return key
-
-    def store_model(self, store: int, department: int, model, ts_min, ts_max):
-        key = self._get_key(store, department)
-        self._models[key] = model
-        self._min[key] = ts_min
-        self._max[key] = ts_max
-
-    def get_model(self, store: int, department: int):
-        key = self._get_key(store, department)
-        model = self._models[key]
-        ts_min = self._min[key]
-        ts_max = self._max[key]
-        return model, ts_min, ts_max
-
 @threadpool_limits.wrap(limits=1)
 def process_table(table):
     scale = 40
-    name = "uc03"
+    name = "uc06"
     root_model_path = f"/workspace/data/data/tpcxai_datasets/sf{scale}"
     model_file_name = f"{root_model_path}/model/{name}/{name}.python.model"
     model = joblib.load(model_file_name)
-
-    def udf(store, department):
-        forecasts = []
+    def udf(smart_5_raw,
+            smart_10_raw,
+            smart_184_raw,
+            smart_187_raw,
+            smart_188_raw,
+            smart_197_raw,
+            smart_198_raw):
         data = pd.DataFrame({
-            'store': store,
-            'department': department
+            'smart_5_raw': smart_5_raw,
+            'smart_10_raw': smart_10_raw,
+            'smart_184_raw': smart_184_raw,
+            'smart_187_raw': smart_187_raw,
+            'smart_188_raw': smart_188_raw,
+            'smart_197_raw': smart_197_raw,
+            'smart_198_raw': smart_198_raw
         })
         # print(data.shape)
-        # combinations = np.unique(data[['Store', 'Dept']].values, axis=0)
-        for index, row in data.iterrows():
-            store = row.store
-            dept = row.department
-            periods = 52
-            try:
-                current_model, ts_min, ts_max = model.get_model(store, dept)
-            except KeyError:
-                continue
-            # disable warnings that non-date index is returned from forecast
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=ValueWarning)
-                forecast = current_model.forecast(periods)
-                forecast = np.clip(forecast, a_min=0.0, a_max=None)  # replace negative forecasts
-            start = pd.date_range(ts_max, periods=2)[1]
-            forecast_idx = pd.date_range(start, periods=periods, freq='W-FRI')
-            forecasts.append(
-                str({'store': store, 'department': dept, 'date': forecast_idx, 'weekly_sales': forecast})
-            )
-        return np.array(forecasts)
+        return model.predict(data)
     df = pd.DataFrame(udf(*table))
+    with open("/home/obtest/log/output_test.log", "a+") as f:
+        f.write(f"cnmd {len(df)}\n")
     # print(len(df))
     return pa.Table.from_pandas(df)
 

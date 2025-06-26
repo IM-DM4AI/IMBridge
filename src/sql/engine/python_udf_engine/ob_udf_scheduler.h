@@ -71,7 +71,7 @@ namespace oceanbase
             }
 
             template <class F, class... Args>
-            auto enqueue(F &&f, Args &&...args) -> std::future<typename std::result_of<F(Args...)>::type>*
+            auto enqueue(F &&f, Args &&...args) -> std::unique_ptr<std::future<typename std::result_of<F(Args...)>::type>>
             {
                 using returnType = typename std::result_of<F(Args...)>::type;
 
@@ -89,7 +89,7 @@ namespace oceanbase
                 if (success)
                 {
                     async_semaphore->signal();
-                    return new std::future<returnType>(task->get_future());
+                    return std::make_unique<std::future<returnType>>(task->get_future());
                 }
                 return nullptr;
             }
