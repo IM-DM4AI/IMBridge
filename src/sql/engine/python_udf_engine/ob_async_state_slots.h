@@ -28,7 +28,6 @@ namespace oceanbase
 
             bool set_slot_id_to_queue(int id);
 
-            int get_future_res();
 
             static std::unique_ptr<AsyncStateSlots> slots_instance; 
             static std::mutex mutex_init; // init lock
@@ -38,7 +37,6 @@ namespace oceanbase
             std::mutex res_save;
             bool is_init = false; // init tag
             std::vector<std::unique_ptr<ObPUStoreController>> controller_slots; // slots
-            std::vector<std::unique_ptr<std::future<int>>> res_collect; // async res
             int slots_num; // count of slots
             
             std::unique_ptr<SlotsQueue> id_queue;

@@ -2,7 +2,8 @@
 enable_language(C CXX)
 find_package(Arrow REQUIRED)
 find_package(Boost REQUIRED)
-set(CONCURRENTQUEUE_INCLUDE_DIR "/workspace/deploy/duckdb/third_party/concurrentqueue")
+# set(CONCURRENTQUEUE_INCLUDE_DIR "/workspace/deploy/duckdb/third_party/concurrentqueue")
+set(CONCURRENTQUEUE_INCLUDE_DIR "/workspace/concurrentqueue")
 
 
 execute_process(

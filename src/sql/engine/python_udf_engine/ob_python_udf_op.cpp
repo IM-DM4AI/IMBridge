@@ -193,38 +193,39 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
     while (OB_SUCC(ret) && no_data_to_return)
     {
       // output first
-      if(slots->res_collect.size()){
-        LOG_INFO("[Clien] Handle output.", K(ret));
-        int future_id = slots->get_future_res();
+      if(res_collect.size()){
+        // LOG_INFO("[Clien] Handle output.", K(ret));
+        int future_id = -1;
+        for(auto it = res_collect.begin() ;it != res_collect.end();it++){
+          if((*it)->wait_for(std::chrono::seconds(0)) == std::future_status::ready){
+            future_id = (*it)->get();
+            res_collect.erase(it);
+            // LOG_INFO("[Clien] Get future id.", K(ret), K(future_id));
+            break;
+          }
+        }
         if (future_id != -1){
-          try{
-            auto &controller_slot = slots->controller_slots[future_id];
-            LOG_INFO("[Clien] store output.", K(ret));
-            if (OB_FAIL(controller_slot->restore(eval_ctx_, brs_, max_row_cnt)))
-            {
-              ret = OB_ERR_UNEXPECTED;
-              LOG_ERROR("Restore output batchrows failed.", K(ret));
-            }
-            else
-            {
-              // reset all spec filters
-              FOREACH_CNT_X(e, MY_SPEC.filters_, OB_SUCC(ret))
-              {
-                (*e)->clear_evaluated_flag(eval_ctx_);
-                (*e)->get_eval_info(eval_ctx_).clear_evaluated_flag();
-              }
-            }
-            if (OB_SUCC(ret))
-            {
-              LOG_INFO("[Clien] add id to queue.", K(ret));
-              slots->set_slot_id_to_queue(future_id); // add id to queue
-              no_data_to_return = false;
-            }
-          }catch (const std::exception &e)
+          auto &controller_slot = slots->controller_slots[future_id];
+          // LOG_INFO("[Clien] store output.", K(ret));
+          if (OB_FAIL(controller_slot->restore(eval_ctx_, brs_, max_row_cnt)))
           {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("Process async python udf collect failed.", K(ret));
-            break;
+            LOG_ERROR("Restore output batchrows failed.", K(ret));
+          }
+          else
+          {
+            // reset all spec filters
+            FOREACH_CNT_X(e, MY_SPEC.filters_, OB_SUCC(ret))
+            {
+              (*e)->clear_evaluated_flag(eval_ctx_);
+              (*e)->get_eval_info(eval_ctx_).clear_evaluated_flag();
+            }
+          }
+          if (OB_SUCC(ret))
+          {
+            // LOG_INFO("[Clien] add id to queue.", K(ret), K(future_id));
+            while(!slots->set_slot_id_to_queue(future_id)); // add id to queue
+            no_data_to_return = false;
           }
         }
       }else{
@@ -234,11 +235,11 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
         }
         if (slots_id == -1)
         {
-          int futrue_size = slots->res_collect.size();
-          int working_worker = scheduler->working_threads_num.load();
-          int queue_size = slots->queue_size.load();
+          // int futrue_size = res_collect.size();
+          // int working_worker = scheduler->working_threads_num.load();
+          // int queue_size = slots->queue_size.load();
           slots_id = slots->get_slot_id_from_queue();
-          LOG_INFO("[Clien] get a slot id.", K(ret), K(slots_id), K(futrue_size), K(working_worker), K(queue_size));
+          // LOG_INFO("[Clien] get a slot id.", K(ret), K(slots_id), K(futrue_size), K(working_worker), K(queue_size));
         }
         if(slots_id != -1){
           int id = slots_id;
@@ -264,21 +265,21 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
                 LOG_ERROR("failed to save input to slots.", K(ret));
               }
             }else{
-              slots->set_slot_id_to_queue(slots_id);
+              while(!slots->set_slot_id_to_queue(slots_id));
               slots_id = -1;
               id = -1;
             }
           }
           if (OB_SUCC(ret) && id != -1){
-            LOG_INFO("[Clien] create async.", K(ret));
+            // LOG_INFO("[Clien] create async.", K(ret));
             std::unique_ptr<std::future<int>> async_res = scheduler->async_scheduler->enqueue([controller=controller_slot.get(), id]()
                                                                                             { return controller->async_process(id); });
             if (async_res != nullptr && async_res->valid())
             {
-              LOG_INFO("[Clien] save async.", K(ret));
+              // LOG_INFO("[Clien] save async.", K(ret));
+              res_collect.push_back(std::move(async_res));
               slots_id = -1;
               save_input = false;
-              slots->res_collect.push_back(std::move(async_res));
             }
           }
         }
@@ -1261,20 +1262,10 @@ int ObPythonUDFCell::do_restore_batch(ObEvalCtx &eval_ctx, int64_t output_idx, i
     }
   }
   */
-  SharedMemoryManager shm(std::to_string(shm_lane_id), ProcessKind::CLIENT);
-  if(!read_arrow_from_shared_memory(result_arrow_store_, shm, OUTPUT_TABLE)){
-    ret = OB_ERR_UNEXPECTED_UNIT_STATUS;
-    LOG_WARN("Failed to write arrow table to shared memory", K(ret));
-  }
-  if(!convert_arrow_to_ob_data(result_arrow_store_, eval_ctx, result_datums, expr_, output_idx, output_size)){
+  if(!convert_arrow_to_ob_data(result_output, eval_ctx, result_datums, expr_, output_idx, output_size)){
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("Failed to conver arrow to ob data", K(ret));
   }
-  shm.destroy_shared_memory_object<char>(INPUT_TABLE);
-  shm.destroy_shared_memory_object<char>(OUTPUT_TABLE);
-  shm.server_post();
-  auto &scheduler =  IMLaneScheduler::GetOrCreateInstance(true);
-  scheduler->push_id_to_avaliable_queue(shm_lane_id);
   return ret;
 }
 
@@ -1340,20 +1331,10 @@ int ObPythonUDFCell::do_restore_vector(ObEvalCtx &eval_ctx, int64_t output_idx, 
     }
   }
   */
-  SharedMemoryManager shm(std::to_string(shm_lane_id), ProcessKind::CLIENT);
-  if(!read_arrow_from_shared_memory(result_arrow_store_, shm, OUTPUT_TABLE)){
-    ret = OB_ERR_UNEXPECTED_UNIT_STATUS;
-    LOG_WARN("Failed to write arrow table to shared memory", K(ret));
-  }
-  if(!convert_arrow_to_ob_data(result_arrow_store_, eval_ctx, vector, expr_, output_idx, output_size)){
+  if(!convert_arrow_to_ob_data(result_output, eval_ctx, vector, expr_, output_idx, output_size)){
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("Failed to conver arrow to ob data", K(ret));
   }
-  shm.destroy_shared_memory_object<char>(INPUT_TABLE);
-  shm.destroy_shared_memory_object<char>(OUTPUT_TABLE);
-  shm.server_post();
-  auto &scheduler =  IMLaneScheduler::GetOrCreateInstance(true);
-  scheduler->push_id_to_avaliable_queue(shm_lane_id);
   return ret;
 }
 
@@ -1362,7 +1343,7 @@ int ObPythonUDFCell::do_restore_arrow_to_batch(ObEvalCtx &eval_ctx, int64_t outp
 {
   int ret = OB_SUCCESS;
   ObDatum *result_datums = expr_->locate_batch_datums(eval_ctx);
-  if(!convert_arrow_to_ob_data(result_arrow_store_, eval_ctx, result_datums, expr_, output_idx, output_size)){
+  if(!convert_arrow_to_ob_data(result_output, eval_ctx, result_datums, expr_, output_idx, output_size)){
     ret = OB_NOT_SUPPORTED;
     LOG_WARN("Unsupported type.", K(ret));
   };
@@ -1389,7 +1370,7 @@ int ObPythonUDFCell::do_restore_arrow_to_vector(ObEvalCtx &eval_ctx, int64_t out
   }
   expr_->init_vector_for_write(eval_ctx, format, batch_size_);
   ObIVector *vector = expr_->get_vector(eval_ctx);
-  if(!convert_arrow_to_ob_data(result_arrow_store_, eval_ctx, vector, expr_, output_idx, output_size)){
+  if(!convert_arrow_to_ob_data(result_output, eval_ctx, vector, expr_, output_idx, output_size)){
     ret = OB_NOT_SUPPORTED;
     LOG_WARN("Unsupported input type.", K(ret));
   }
@@ -1535,7 +1516,7 @@ int ObPythonUDFCell::eval(PyObject *pArgs, int64_t eval_size)
   */
   
   auto &scheduler =  IMLaneScheduler::GetOrCreateInstance(true);
-  shm_lane_id = scheduler->get_id_from_avaliable_queue();
+  int shm_lane_id = scheduler->get_id_from_avaliable_queue();
   SharedMemoryManager shm(std::to_string(shm_lane_id), ProcessKind::CLIENT);
   if(!write_arrow_to_shared_memory(result_arrow_store_, shm, INPUT_TABLE)){
     ret = OB_ERR_UNEXPECTED_UNIT_STATUS;
@@ -1544,6 +1525,16 @@ int ObPythonUDFCell::eval(PyObject *pArgs, int64_t eval_size)
   }
   scheduler->push_cmd_to_task_queue(shm_lane_id, TASK_UDF_INFER);
   shm.client_wait();
+  std::shared_ptr<arrow::Table> res_tmp;
+  if(!read_arrow_from_shared_memory(res_tmp, shm, OUTPUT_TABLE)){
+    ret = OB_ERR_UNEXPECTED_UNIT_STATUS;
+    LOG_WARN("Failed to write arrow table to shared memory", K(ret));
+  }
+  result_output = arrow::Concatenate(res_tmp->column(0)->chunks()).ValueOrDie(); /// 物化，避免shm销毁
+  shm.destroy_shared_memory_object<char>(INPUT_TABLE);
+  shm.destroy_shared_memory_object<char>(OUTPUT_TABLE);
+  shm.server_post();
+  scheduler->push_id_to_avaliable_queue(shm_lane_id);
   result_size_ += eval_size;
   return ret;
 }

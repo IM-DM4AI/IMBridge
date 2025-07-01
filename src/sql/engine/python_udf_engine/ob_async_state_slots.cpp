@@ -84,42 +84,15 @@ namespace oceanbase
         {
             int slot_id;
             bool success = id_queue->try_dequeue(slot_id);
-            queue_size--;
+            // if(success)queue_size--;
             return success ? slot_id : -1;
         }
 
         bool AsyncStateSlots::set_slot_id_to_queue(int id)
         {
             bool success = id_queue->enqueue(id);
-            queue_size++;
+            // if(success)queue_size++;
             return success;
         }
-
-        int AsyncStateSlots::get_future_res()
-        {
-            int future_id = -1;
-            std::lock_guard<std::mutex> lock(res_save);
-            for (int i = 0; i < res_collect.size();)
-            {
-                auto &it = res_collect[i];
-                if (it && it->valid())
-                {
-                    if (it->wait_for(std::chrono::seconds(0)) == std::future_status::ready)
-                    {
-                        future_id = it->get();
-                        res_collect.erase(res_collect.begin() + i);
-                        break;
-                    }else{
-                        i++;
-                    }
-                }
-                else
-                {
-                    res_collect.erase(res_collect.begin() + i);
-                }
-            }
-            return future_id;
-        }
-
     } // end namespace sql
 } // end namespace oceanbase

@@ -13,6 +13,8 @@
 #include <numpy/npy_common.h>
 #include <arrow/api.h>
 #include <arrow/table.h>
+#include <future>
+#include <memory>
 //#include <Python.h>
 
 namespace oceanbase
@@ -139,7 +141,7 @@ private:
   int result_size_;
   void *result_store_;
   std::shared_ptr<arrow::Table> result_arrow_store_;
-  int shm_lane_id;
+  std::shared_ptr<arrow::Array> result_output;
 };
 typedef common::ObDList<ObPythonUDFCell> PythonUDFCellList;
 
@@ -240,6 +242,7 @@ private:
   int slots_id = -1; // async slots id
   bool save_input = false;
   ObPUStoreController controller_;
+  std::vector<std::unique_ptr<std::future<int>>> res_collect; // async res
 
   void* _save; //for Python Interpreter Thread State
 };

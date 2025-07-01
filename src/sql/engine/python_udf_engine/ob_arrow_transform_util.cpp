@@ -88,11 +88,8 @@ namespace oceanbase
             return true;
         }
 
-        bool convert_arrow_to_ob_data(std::shared_ptr<arrow::Table> &table, ObEvalCtx &eval_ctx, ObIVector *res, ObExpr *expr, int64_t idx, int64_t res_size)
+        bool convert_arrow_to_ob_data(std::shared_ptr<arrow::Array> &array, ObEvalCtx &eval_ctx, ObIVector *res, ObExpr *expr, int64_t idx, int64_t res_size)
         {
-            std::shared_ptr<arrow::ChunkedArray> column = table->column(0);
-            std::vector<std::shared_ptr<arrow::Array>> chunks = column->chunks();
-            std::shared_ptr<arrow::Array> array = arrow::Concatenate(chunks).ValueOrDie();
             // 构造vector并赋回expr_
             switch (expr->datum_meta_.type_)
             {
@@ -142,9 +139,8 @@ namespace oceanbase
             return true;
         }
 
-        bool convert_arrow_to_ob_data(std::shared_ptr<arrow::Table> &table, ObEvalCtx &eval_ctx, ObDatum *res, ObExpr *expr, int64_t idx, int64_t res_size)
+        bool convert_arrow_to_ob_data(std::shared_ptr<arrow::Array> &array, ObEvalCtx &eval_ctx, ObDatum *res, ObExpr *expr, int64_t idx, int64_t res_size)
         {
-            std::shared_ptr<arrow::Array> array = arrow::Concatenate(table->column(0)->chunks()).ValueOrDie();
             switch (OB_NOT_SUPPORTED)
             {
             case ObCharType:
