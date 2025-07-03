@@ -17,9 +17,9 @@ namespace sql
 
 static bool with_batch_control_ = false; // 是否进行batch size控制
 
-static bool with_async_execute = true; // Whether use async execute
+static bool with_async_execute = false; // Whether use async execute
 
-static bool output_first = false; // 异步任务是否优先处理输出
+static bool output_first = true; // 异步任务是否优先处理输出
 
 OB_SERIALIZE_MEMBER((ObPythonUDFSpec, ObOpSpec),
                     udf_exprs_,
@@ -32,12 +32,14 @@ ObPythonUDFSpec::~ObPythonUDFSpec() {}
 
 ObPythonUDFOp::ObPythonUDFOp(
     ObExecContext &exec_ctx, const ObOpSpec &spec, ObOpInput *input)
-  : ObOperator(exec_ctx, spec, input), controller_()
+  : ObOperator(exec_ctx, spec, input), controller_(), controller_lists(3)
 {
   int ret = OB_SUCCESS;
+  for(int i = 0;i<3;i++){
+    ctl_queue.push(i);
+  }
   //predict_size_ = 256;
   //predict_size_ = MY_SPEC.max_batch_size_; //default
-
   const uint64_t tenant_id = ctx_.get_my_session()->get_effective_tenant_id();
   //ObMemAttr attr(tenant_id, ObModIds::RESTORE, ObCtxIds::MEMSTORE_CTX_ID);
   //controller_.set_attr(attr);
@@ -65,15 +67,21 @@ int ObPythonUDFOp::inner_open()
   // init context
   const uint64_t tenant_id = ctx_.get_my_session()->get_effective_tenant_id();
   // create async slots
-  if(with_async_execute){
-    auto &slots = AsyncStateSlots::GetOrCreateInstance(IMLaneScheduler::GetOrCreateInstance()->sys_cpu_core_nums);
-    if(slots != nullptr && OB_FAIL(slots->InitControllerSlots(MY_SPEC.max_batch_size_,
-                                                                                  MY_SPEC.udf_exprs_, 
-                                                                                  MY_SPEC.input_exprs_,
-                                                                                  tenant_id))){
-      ret = OB_INIT_FAIL;
-      LOG_WARN("Init controller slots failed", K(ret));                                          
-    }
+  // if(with_async_execute){
+  //   auto &slots = AsyncStateSlots::GetOrCreateInstance(IMLaneScheduler::GetOrCreateInstance()->sys_cpu_core_nums);
+  //   if(slots != nullptr && OB_FAIL(slots->InitControllerSlots(MY_SPEC.max_batch_size_,
+  //                                                                                 MY_SPEC.udf_exprs_, 
+  //                                                                                 MY_SPEC.input_exprs_,
+  //                                                                                 tenant_id))){
+  //     ret = OB_INIT_FAIL;
+  //     LOG_WARN("Init controller slots failed", K(ret));                                          
+  //   }
+  // }
+  for(auto &ctl : controller_lists){
+    ctl.init(MY_SPEC.max_batch_size_,
+            MY_SPEC.udf_exprs_, 
+            MY_SPEC.input_exprs_,
+            tenant_id);
   }
   if(OB_SUCC(ret) && OB_FAIL(controller_.init(MY_SPEC.max_batch_size_,
                                MY_SPEC.udf_exprs_, 
@@ -189,13 +197,17 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
   if(with_async_execute){// async execute
     clear_evaluated_flag();
     const ObBatchRows *child_brs = nullptr;
-    auto &slots = AsyncStateSlots::GetOrCreateInstance();
+    // auto &slots = AsyncStateSlots::GetOrCreateInstance();
     auto &scheduler = IMLaneScheduler::GetOrCreateInstance(true);
     bool no_data_to_return = true;
     while (OB_SUCC(ret) && no_data_to_return)
     {
       if(output_first){
       // output first
+      // real no data to return
+      if(brs_.end_ && res_collect.empty()){
+        return ret;
+      }
       if(res_collect.size()){
         // LOG_INFO("[Clien] Handle output.", K(ret));
         int future_id = -1;
@@ -208,9 +220,9 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
           }
         }
         if (future_id != -1){
-          auto &controller_slot = slots->controller_slots[future_id];
+          auto &controller_slot = controller_lists[future_id];
           // LOG_INFO("[Clien] store output.", K(ret));
-          if (OB_FAIL(controller_slot->restore(eval_ctx_, brs_, max_row_cnt)))
+          if (OB_FAIL(controller_slot.restore(eval_ctx_, brs_, max_row_cnt)))
           {
             ret = OB_ERR_UNEXPECTED;
             LOG_ERROR("Restore output batchrows failed.", K(ret));
@@ -227,26 +239,24 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
           if (OB_SUCC(ret))
           {
             // LOG_INFO("[Clien] add id to queue.", K(ret), K(future_id));
-            slots->set_slot_id_to_queue(future_id); // add id to queue
+            ctl_queue.push(future_id);
             no_data_to_return = false;
           }
         }
-      }else{
-        if(brs_.end_){
-          LOG_INFO("[Clien] no data to pull.", K(ret));
-          return ret;
-        }
-        if (slots_id == -1)
+      }
+      if(no_data_to_return && !brs_.end_){
+        if (slots_id == -1 && ctl_queue.size())
         {
           // int futrue_size = res_collect.size();
           // int working_worker = scheduler->working_threads_num.load();
           // int queue_size = slots->queue_size.load();
-          slots_id = slots->get_slot_id_from_queue();
-          // LOG_INFO("[Clien] get a slot id.", K(ret), K(slots_id), K(futrue_size), K(working_worker), K(queue_size));
+          slots_id = ctl_queue.front();
+          ctl_queue.pop();
+          // LOG_INFO("[Clien] get a slot id.", K(ret), K(slots_id));
         }
         if(slots_id != -1){
           int id = slots_id;
-          auto &controller_slot = slots->controller_slots[id];
+          auto &controller_slot = controller_lists[id];
           if (!save_input && !brs_.end_){
             // LOG_INFO("[Clien] pull input.", K(ret));
             if (OB_FAIL(child_->get_next_batch(max_row_cnt, child_brs)))
@@ -261,22 +271,22 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
             }
             if(!brs_.end_){
               // LOG_INFO("[Clien] store input.", K(ret));
-              if(OB_SUCC(controller_slot->store(eval_ctx_, brs_))){
+              if(OB_SUCC(controller_slot.store(eval_ctx_, brs_))){
                 save_input = true;
               }else{
                 ret = OB_ERR_UNEXPECTED;
                 LOG_ERROR("failed to save input to slots.", K(ret));
               }
             }else{
-              slots->set_slot_id_to_queue(slots_id);
+              ctl_queue.push(slots_id);
               slots_id = -1;
               id = -1;
             }
           }
           if (OB_SUCC(ret) && id != -1){
             // LOG_INFO("[Clien] create async.", K(ret));
-            std::unique_ptr<std::future<int>> async_res = scheduler->async_scheduler->enqueue([controller=controller_slot.get(), id]()
-                                                                                            { return controller->async_process(id); });
+            std::unique_ptr<std::future<int>> async_res = scheduler->async_scheduler->enqueue([&controller_slot, id]()
+                                                                                            { return controller_slot.async_process(id); });
             if (async_res != nullptr && async_res->valid())
             {
               // LOG_INFO("[Clien] save async.", K(ret));
@@ -292,12 +302,13 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
       // slots_id == -1 means: current operator is not using async slots to store data
       // slots_id != -1 means: have used slots but no create async task、
       // 1. 确定是否有slots并且有数据可以拉取, 有就走创建任务，没有就走处理输出
-      if (slots_id == -1 && !brs_.end_) 
+      if (slots_id == -1 && !brs_.end_ &&  ctl_queue.size()) 
       {
         // int futrue_size = res_collect.size();
         // int working_worker = scheduler->working_threads_num.load();
         // int queue_size = slots->queue_size.load();
-        slots_id = slots->get_slot_id_from_queue();
+        slots_id = ctl_queue.front();
+        ctl_queue.pop();
          // LOG_INFO("[Clien] get a slot id.", K(ret), K(slots_id), K(futrue_size), K(working_worker), K(queue_size));
       }
       if (slots_id == -1)
@@ -320,8 +331,8 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
         {
           try
           {
-            auto &controller_slot = slots->controller_slots[future_id];
-            if (OB_FAIL(controller_slot->restore(eval_ctx_, brs_, max_row_cnt)))
+            auto &controller_slot = controller_lists[future_id];
+            if (OB_FAIL(controller_slot.restore(eval_ctx_, brs_, max_row_cnt)))
             {
               ret = OB_ERR_UNEXPECTED;
               LOG_ERROR("Restore output batchrows failed.", K(ret));
@@ -338,7 +349,7 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
             if (OB_SUCC(ret))
             {
               // LOG_INFO("[Clien] add id to queue.", K(ret), K(future_id));
-              slots->set_slot_id_to_queue(future_id); // add id to queue
+              ctl_queue.push(future_id); // add id to queue
               no_data_to_return = false;
             }
           }
@@ -353,7 +364,7 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
       else
       { // has slots, handle input
         int id = slots_id;
-        auto &controller_slot = slots->controller_slots[id];
+        auto &controller_slot = controller_lists[id];
         if (!save_input && !brs_.end_)
         {
           if (OB_FAIL(child_->get_next_batch(max_row_cnt, child_brs)))
@@ -368,14 +379,14 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
           }
           if(!brs_.end_){
             // LOG_INFO("[Clien] store input.", K(ret));
-            if(OB_SUCC(controller_slot->store(eval_ctx_, brs_))){
+            if(OB_SUCC(controller_slot.store(eval_ctx_, brs_))){
               save_input = true;
             }else{
               ret = OB_ERR_UNEXPECTED;
               LOG_ERROR("failed to save input to slots.", K(ret));
             }
           }else{
-            slots->set_slot_id_to_queue(slots_id);
+            ctl_queue.push(slots_id);
             slots_id = -1;
             id = -1;
           }
@@ -383,8 +394,8 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
         if (OB_SUCC(ret) && id != -1)
         {
           // LOG_INFO("[Clien] create async.", K(ret));
-          std::unique_ptr<std::future<int>> async_res = scheduler->async_scheduler->enqueue([controller=controller_slot.get(), id]()
-                                                                                            { return controller->async_process(id); });
+          std::unique_ptr<std::future<int>> async_res = scheduler->async_scheduler->enqueue([&controller_slot, id]()
+                                                                                            { return controller_slot.async_process(id); });
           if (async_res != nullptr && async_res->valid())
           {
             // LOG_INFO("[Clien] save async.", K(ret));

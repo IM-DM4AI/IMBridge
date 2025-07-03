@@ -15,6 +15,7 @@
 #include <arrow/table.h>
 #include <future>
 #include <memory>
+#include <queue>
 //#include <Python.h>
 
 namespace oceanbase
@@ -243,6 +244,8 @@ private:
   bool save_input = false;
   ObPUStoreController controller_;
   std::vector<std::unique_ptr<std::future<int>>> res_collect; // async res
+  std::vector<ObPUStoreController> controller_lists;
+  std::queue<int> ctl_queue;
 
   void* _save; //for Python Interpreter Thread State
 };
