@@ -67,7 +67,7 @@ int main(int argc, char **argv)
 	bool stop_flag = true;
 
 	// 写入日志的辅助函数
-	auto log = [&](std::string message, bool flag = true)
+	auto log = [&](std::string message, bool flag = false)
 	{
 		if(flag)
 			log_file << "[Server] " << channel_name << " " << message << std::endl;

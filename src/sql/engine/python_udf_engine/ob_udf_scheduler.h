@@ -103,7 +103,7 @@ namespace oceanbase
 
             ~IMLaneScheduler();
 
-            void launch(float threshold = 0.7, int process_num = -1);
+            void launch(float threshold = 0.9, int process_num = -1);
 
             void destroy();
 
@@ -131,6 +131,7 @@ namespace oceanbase
             // cpu cores count
             int sys_cpu_core_nums = 0;
             std::atomic<int> working_threads_num;
+            bool use_async = false;
         private:
             static std::unique_ptr<IMLaneScheduler> scheduler_instance; 
             class Impl;
@@ -138,7 +139,6 @@ namespace oceanbase
             bool is_manager;
             // only manager use
             int total_threads_num;
-            bool use_async = false;
             double async_threshold = 0.7;
             
         };

@@ -8163,7 +8163,7 @@ int ObSelectLogPlan::generate_python_udf_plans(PythonUDFOpHelper &python_udf_hel
   } else if (!top->is_distributed()) {
     exch_info.dist_method_ = ObPQDistributeMethod::NONE;
   } else {}
-  // IMLane TODO:  chage the order first udf second exchange
+
   if (OB_FAIL(allocate_python_udf_op_as_top(top, python_udf_exprs, python_udf_projection_exprs, python_udf_filter_exprs))){
     LOG_WARN("failed to allocate python udf operator as top", K(ret));
     //} else if (OB_FAIL(allocate_exchange_as_top(top, exch_info))) {

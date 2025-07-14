@@ -17,7 +17,9 @@ namespace sql
 
 static bool with_batch_control_ = false; // 是否进行batch size控制
 
-static bool with_async_execute = false; // Whether use async execute
+static bool with_adaptive_execute = true; // 自动在process和fine之间切换
+
+bool with_async_execute = false; // Whether use async execute
 
 static bool output_first = true; // 异步任务是否优先处理输出
 
@@ -32,11 +34,20 @@ ObPythonUDFSpec::~ObPythonUDFSpec() {}
 
 ObPythonUDFOp::ObPythonUDFOp(
     ObExecContext &exec_ctx, const ObOpSpec &spec, ObOpInput *input)
-  : ObOperator(exec_ctx, spec, input), controller_(), controller_lists(3)
+  : ObOperator(exec_ctx, spec, input), controller_()
 {
   int ret = OB_SUCCESS;
-  for(int i = 0;i<3;i++){
-    ctl_queue.push(i);
+  if(with_adaptive_execute || with_async_execute){
+    controller_lists = std::vector<ObPUStoreController>(12);
+    warm_up_flag = true;
+    warm_up_time = 5000;
+    slots_up_bound = 12;
+    increase_slots = 3;
+    slots_end_id = 0;
+    for(int i = 0;i<increase_slots;i++){
+      ctl_queue.push(slots_end_id);
+      slots_end_id++;
+    }
   }
   //predict_size_ = 256;
   //predict_size_ = MY_SPEC.max_batch_size_; //default
@@ -77,11 +88,13 @@ int ObPythonUDFOp::inner_open()
   //     LOG_WARN("Init controller slots failed", K(ret));                                          
   //   }
   // }
-  for(auto &ctl : controller_lists){
-    ctl.init(MY_SPEC.max_batch_size_,
-            MY_SPEC.udf_exprs_, 
-            MY_SPEC.input_exprs_,
-            tenant_id);
+  if(with_adaptive_execute || with_async_execute){
+    for(auto &ctl : controller_lists){
+      ctl.init(MY_SPEC.max_batch_size_,
+              MY_SPEC.udf_exprs_, 
+              MY_SPEC.input_exprs_,
+              tenant_id);
+    }
   }
   if(OB_SUCC(ret) && OB_FAIL(controller_.init(MY_SPEC.max_batch_size_,
                                MY_SPEC.udf_exprs_, 
@@ -106,8 +119,19 @@ int ObPythonUDFOp::inner_close()
 
   //PyEval_RestoreThread((PyThreadState *)_save);
   //Py_FinalizeEx(); // Python Intepreter
-  if(with_async_execute){
+  if(with_async_execute || with_adaptive_execute){
     AsyncStateSlots::ResetInstance();
+    for(auto &x : controller_lists){
+      x.free();
+    }
+    controller_lists.clear();
+    while(ctl_queue.size()){
+      ctl_queue.pop();
+    }
+    slots_end_id = 0;
+    warm_up_flag = true;
+    auto &scheduler = IMLaneScheduler::GetOrCreateInstance(true);
+    // scheduler->use_async = false;
   }
 
   // free attrs;
@@ -193,7 +217,23 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
   */
   //struct timeval t1, t2;
   //gettimeofday(&t1, NULL);
-  
+
+  // warm up execute
+  if(with_adaptive_execute && !with_async_execute){
+    if(warm_up_flag){
+      start_time = std::chrono::high_resolution_clock::now();
+      warm_up_flag = false;
+    }else{
+      auto end_time = std::chrono::high_resolution_clock::now();
+      auto duration =
+			    std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+      auto &scheduler = IMLaneScheduler::GetOrCreateInstance(true);
+      if(duration > warm_up_time && scheduler->check_use_async()){
+        with_async_execute = true;
+      }
+    }
+  }
+  // LOG_INFO("switch async————————————————————————————————————————————.", K(with_async_execute), K(with_adaptive_execute));
   if(with_async_execute){// async execute
     clear_evaluated_flag();
     const ObBatchRows *child_brs = nullptr;
@@ -241,6 +281,7 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
             // LOG_INFO("[Clien] add id to queue.", K(ret), K(future_id));
             ctl_queue.push(future_id);
             no_data_to_return = false;
+            scheduler->working_threads_num--;
           }
         }
       }
@@ -263,6 +304,7 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
             {
               ret = OB_ERR_UNEXPECTED;
               LOG_ERROR("Get child next batch failed.", K(ret));
+              break;
             }
             else if (brs_.copy(child_brs))
             {
@@ -290,9 +332,24 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
             if (async_res != nullptr && async_res->valid())
             {
               // LOG_INFO("[Clien] save async.", K(ret));
+              scheduler->working_threads_num++;
               res_collect.push_back(std::move(async_res));
               slots_id = -1;
               save_input = false;
+              if(with_adaptive_execute){
+                if(scheduler->check_use_async()){
+                  for(int i = 0; i<increase_slots && slots_end_id < slots_up_bound;i++){
+                    ctl_queue.push(slots_end_id);
+                    // controller_lists.push_back({});
+                    // const uint64_t tenant_id = ctx_.get_my_session()->get_effective_tenant_id();
+                    // controller_lists[slots_end_id].init(MY_SPEC.max_batch_size_,
+                    //                                     MY_SPEC.udf_exprs_, 
+                    //                                     MY_SPEC.input_exprs_,
+                    //                                     tenant_id);
+                    slots_end_id++;
+                  }
+                }
+              }
             }
           }
         }
@@ -432,6 +489,8 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
       }
     } else { // 无batch size控制
       if (OB_SUCC(ret)) { 
+        auto &scheduler = IMLaneScheduler::GetOrCreateInstance(true);
+        scheduler->working_threads_num++;
         clear_evaluated_flag();
         const ObBatchRows *child_brs = nullptr;
         /*
@@ -453,6 +512,7 @@ int ObPythonUDFOp::inner_get_next_batch(const int64_t max_row_cnt)
           ret = OB_ERR_UNEXPECTED;
           LOG_WARN("Process python udf failed.", K(ret));
         } else {}
+        scheduler->working_threads_num--;
       }
     }
 

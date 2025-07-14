@@ -107,7 +107,6 @@ namespace oceanbase
         void IMLaneScheduler::push_id_to_avaliable_queue(int id)
         {
             impl->avaliable_queue.send(&id, sizeof(int), 0);
-            working_threads_num--;
         }
         void IMLaneScheduler::push_cmd_to_task_queue(int shm_id, int cmd)
         {
@@ -127,14 +126,15 @@ namespace oceanbase
             bi::message_queue::size_type recvd_size;
             unsigned int priority;
             impl->avaliable_queue.receive(&msg, sizeof(int), recvd_size, priority);
-            working_threads_num++;
             return msg;
         }
         bool IMLaneScheduler::check_use_async()
         {
-            if (working_threads_num < total_threads_num * async_threshold)
+            if (working_threads_num.load() < total_threads_num * async_threshold)
             {
                 use_async = true;
+            }else{
+                use_async = false;
             }
             return use_async;
         }

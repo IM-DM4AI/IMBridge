@@ -247,6 +247,17 @@ private:
   std::vector<ObPUStoreController> controller_lists;
   std::queue<int> ctl_queue;
 
+  // adaptive warm up
+  std::chrono::time_point<std::chrono::high_resolution_clock> start_time;
+  bool warm_up_flag;
+  bool warm_up_time;
+
+  // adaptive slots
+  int slots_up_bound;
+  int increase_slots;
+
+  int slots_end_id;
+
   void* _save; //for Python Interpreter Thread State
 };
 
