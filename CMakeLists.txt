@@ -121,6 +121,15 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/close_modules)
   add_subdirectory(close_modules)
 endif()
 
+set(CMAKE_PREFIX_PATH "/home/IMLane_main/lib_dist/lib" ${CMAKE_PREFIX_PATH})
+set(IMLANE_FMT_PATH "/home/IMLane_main/third_party/fmt/dist")
+
+find_package(IMLane REQUIRED)
+
+message(STATUS "IMLane Include Path: ${IMLane_INCLUDE_DIRS}" )
+message(STATUS "IMLane C Libraries: ${IMLane_C_LIBRARIES}" )
+message(STATUS "IMLane C STATIC Libraries: ${IMLane_C_STATIC_LIBRARIES}" )
+
 add_subdirectory(deps/easy)
 add_subdirectory(deps/oblib)
 add_subdirectory(src/objit)

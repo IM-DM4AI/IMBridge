@@ -1294,7 +1294,14 @@ if (${ARCHITECTURE} STREQUAL "x86_64")
 	)
 endif()
 
+add_library(imlane_plugin engine/python_udf_engine/ob_imlane_plugin.cpp)
+
+target_include_directories(imlane_plugin PUBLIC ${IMLane_INCLUDE_DIRS})
+target_link_libraries(imlane_plugin PUBLIC ${IMLane_C_STATIC_LIBRARIES})
+
 target_link_libraries(ob_sql PUBLIC python_lib)
+
+target_link_libraries(ob_sql PUBLIC imlane_plugin)
 
 target_link_libraries(ob_sql PUBLIC ob_base)
 

@@ -6,6 +6,7 @@
 #include "sql/engine/subquery/ob_subplan_scan_op.h"
 #include "sql/engine/expr/ob_expr_python_udf.h"
 
+#include "common/arrow_lane.hpp"
 
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 #include <Python.h>

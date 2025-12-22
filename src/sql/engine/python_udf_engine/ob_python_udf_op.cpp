@@ -4,6 +4,8 @@
 #include "sql/engine/ob_physical_plan.h"
 #include "sql/engine/ob_exec_context.h"
 
+#include "ob_imlane_plugin.h"
+
 #include <iostream>
 #include <fstream>
 
