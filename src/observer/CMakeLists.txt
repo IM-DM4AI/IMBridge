@@ -461,6 +461,7 @@ target_link_libraries(observer
   ob_malloc
   oceanbase_static
   ob_sql_static
+  ${IMLane_C_STATIC_LIBRARIES}
   ob_storage_static
   ob_share_static
   ${ob_close_modules_static_name}

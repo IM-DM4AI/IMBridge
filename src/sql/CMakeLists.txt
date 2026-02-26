@@ -1295,13 +1295,19 @@ if (${ARCHITECTURE} STREQUAL "x86_64")
 endif()
 
 add_library(imlane_plugin engine/python_udf_engine/ob_imlane_plugin.cpp)
+target_compile_definitions(imlane_plugin PRIVATE 
+    _GLIBCXX_USE_CXX11_ABI=1
+)
 
 target_include_directories(imlane_plugin PUBLIC ${IMLane_INCLUDE_DIRS})
-target_link_libraries(imlane_plugin PUBLIC ${IMLane_C_STATIC_LIBRARIES})
+target_link_libraries(imlane_plugin PUBLIC    ${IMLane_C_STATIC_LIBRARIES})
 
 target_link_libraries(ob_sql PUBLIC python_lib)
 
-target_link_libraries(ob_sql PUBLIC imlane_plugin)
+message(STATUS "IMLane_INCLUDE_DIRS: ${IMLane_INCLUDE_DIRS}")
+message(STATUS "IMLane_C_STATIC_LIBRARIES: ${IMLane_C_STATIC_LIBRARIES}")
+
+target_link_libraries(ob_sql PUBLIC imlane_plugin ${IMLane_C_STATIC_LIBRARIES})
 
 target_link_libraries(ob_sql PUBLIC ob_base)
 
@@ -1310,7 +1316,7 @@ add_library(ob_sql_static
   EXCLUDE_FROM_ALL)
 
 target_link_libraries(ob_sql_static
-  PUBLIC ob_sql ob_sql_server_parser_static)
+  PUBLIC ob_sql ob_sql_server_parser_static ${IMLane_C_STATIC_LIBRARIES})
 
 execute_process(
   COMMAND bash gen_parser.sh

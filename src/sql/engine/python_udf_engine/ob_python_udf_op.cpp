@@ -53,7 +53,9 @@ ObPythonUDFOp::~ObPythonUDFOp() {
 int ObPythonUDFOp::inner_open()
 {
   int ret = OB_SUCCESS;
-
+  IMLanePlugin imlane_plugin; // ensure IMBridge is initialized
+  imlane_plugin.Setup();
+  
   //initialize Python Intepreter
   //Py_InitializeEx(!Py_IsInitialized());
   //_save = PyEval_SaveThread();
