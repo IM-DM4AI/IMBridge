@@ -122,7 +122,6 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/close_modules)
 endif()
 
 set(CMAKE_PREFIX_PATH "/home/IMLane_main/lib_dist/lib" ${CMAKE_PREFIX_PATH})
-set(IMLANE_FMT_PATH "/home/IMLane_main/third_party/fmt/dist")
 
 find_package(IMLane REQUIRED)
 
