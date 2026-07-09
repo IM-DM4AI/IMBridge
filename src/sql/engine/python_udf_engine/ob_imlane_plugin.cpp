@@ -1,5 +1,5 @@
 #include "ob_imlane_plugin.h"
-#include "dbend/c/imlane_dbend.hpp"
+#include "imlane/cpp/dbend_arrow_lane.hpp"
 
 // #include "identity_arrow_converter.hpp"
 
@@ -12,15 +12,15 @@ namespace oceanbase {
             public:
                 Impl() {
                     // Constructor implementation
-                    dbend_ctx_ = new dbend::DBEndContext();
+                    runtime_context_ = new dbend::RuntimeContext();
                 }
                 ~Impl() {
                     // Destructor implementation
-                    delete dbend_ctx_;
+                    delete runtime_context_;
                 }
             public:
                 // Private members
-                dbend::DBEndContext* dbend_ctx_;
+                dbend::RuntimeContext* runtime_context_;
         };
 
         IMLanePlugin::IMLanePlugin()
@@ -31,7 +31,7 @@ namespace oceanbase {
         }
 
         void IMLanePlugin::Setup() {
-            impl_->dbend_ctx_->Setup();
+            impl_->runtime_context_->Setup();
         }
     }
 }
